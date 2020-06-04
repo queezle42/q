@@ -17,16 +17,38 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/q#readme>
+#description:         Please see the README on GitHub at <https://github.com/githubuser/q#readme>
 
 dependencies:
 - base >= 4.7 && < 5
+- async
+- brick
+- JuicyPixels
+- lens
+- optparse-applicative
+- text
+- typed-process
+- vty
+
+default-extensions:
+- LambdaCase
+- MultiWayIf
+- NamedFieldPuns
+- OverloadedStrings
+- ScopedTypeVariables
+
+ghc-options:
+- -fwarn-unused-do-bind
+- -fwarn-tabs
+- -Wall
+- -Werror
+- -O2
 
 library:
   source-dirs: src
 
 executables:
-  q-exe:
+  q:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

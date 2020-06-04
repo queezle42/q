@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Cli
+import qualified Q.Cli
 
 main :: IO ()
-main = Cli.main
+main = Q.Cli.main
