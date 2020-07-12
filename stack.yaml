@@ -67,3 +67,4 @@ packages:
 
 nix:
   pure: false
+  packages: [ zlib ]
