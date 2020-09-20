@@ -2,20 +2,34 @@ module Q.Dashboard where
 
 import Brick
 import Control.Monad (when)
-import Control.Monad.IO.Class (liftIO)
+--import Control.Monad.IO.Class (liftIO)
 import Data.Text
 import qualified Graphics.Vty as Vty
 
-data State = State Text
+data State = State {
+  info :: Text,
+  lastEvent :: Maybe (BrickEvent Name Event)
+}
 data Event = Event
+  deriving (Eq, Ord, Show)
 data Name = MainViewport
   deriving (Eq, Ord, Show)
 
 run :: IO ()
 run = do
-  let initialState = State "initialized"
-  _finalState <- defaultMain app initialState
+  let initialState = State {info="initialized", lastEvent=Nothing}
+  initialVty <- buildVty
+  _finalState <- customMain initialVty buildVty Nothing app initialState
   return ()
+  where
+    buildVty :: IO Vty.Vty
+    buildVty = do
+      vty <- Vty.mkVty =<< Vty.standardIOConfig
+      let output = Vty.outputIface vty
+      when (Vty.supportsMode output Vty.Mouse) $
+        Vty.setMode output Vty.Mouse True
+      return vty
+
 
 app :: App State Event Name
 app = App { appDraw, appChooseCursor, appHandleEvent, appStartEvent, appAttrMap }
@@ -30,21 +44,15 @@ app = App { appDraw, appChooseCursor, appHandleEvent, appStartEvent, appAttrMap 
     appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt state
     -- Handle <ctrl-c>
     appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar 'c') [Vty.MCtrl])) = halt state
-    appHandleEvent _state (VtyEvent (Vty.EvKey (Vty.KChar char) [])) = continue $ State $ singleton char
+    appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar char) [])) = continue $ state{info=singleton char, lastEvent=Nothing}
 
-    -- TODO this should work, but does not right now
-    appHandleEvent state (VtyEvent (Vty.EvMouseDown _x _y Vty.BScrollDown [])) = halt state
-    appHandleEvent state (VtyEvent (Vty.EvMouseUp _x _y _button)) = halt state
-
-    appHandleEvent state _event = continue state
+    appHandleEvent state (MouseDown vp Vty.BScrollDown [] _loc) = vScrollBy (viewportScroll vp) 1 >> continue state{lastEvent=Nothing}
+    appHandleEvent state (MouseDown vp Vty.BScrollUp [] _loc) = vScrollBy (viewportScroll vp) (-1) >> continue state{lastEvent=Nothing}
+    
+    appHandleEvent state event = continue state {lastEvent=Just event}
 
     appStartEvent :: State -> EventM Name State
-    appStartEvent state = do
-      vty <- getVtyHandle
-      let output = Vty.outputIface vty
-      when (Vty.supportsMode output Vty.Mouse) $
-        liftIO $ Vty.setMode output Vty.Mouse True
-      return state
+    appStartEvent state = return state
 
     appAttrMap :: State -> AttrMap
     appAttrMap _state = attrMap Vty.defAttr []
@@ -56,5 +64,8 @@ mainViewport :: State -> Widget Name
 mainViewport _state = viewport MainViewport Vertical $ str "Hello World\nasdf\nasdf\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasdfffffffffffffffffffffff\nasdf\nasdf\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasdfffffffffffffffffffffff\nasdf\nasdf\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasd\nasdf\nasdfffffffffffffffffffffff"
 
 statusBar :: State -> Widget Name
-statusBar (State info) = str $ "q: " <> unpack info
-
+statusBar (State{info, lastEvent}) = txt $ "q: " <> info <> lastEventStr lastEvent
+  where
+    lastEventStr :: Maybe (BrickEvent Name Event) -> Text
+    lastEventStr Nothing = ""
+    lastEventStr (Just ev) = ", " <> pack (show ev)

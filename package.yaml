@@ -36,6 +36,7 @@ default-extensions:
 - NamedFieldPuns
 - OverloadedStrings
 - ScopedTypeVariables
+- NamedFieldPuns
 
 ghc-options:
 - -fwarn-unused-do-bind
