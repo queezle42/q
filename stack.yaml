@@ -39,7 +39,10 @@ packages:
 # - git: https://github.com/commercialhaskell/stack.git
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
-# extra-deps: []
+extra-deps:
+- git: https://git.c3pb.de/jens/qd.git
+  commit: ec42f49c3c12855022fcaaff007ff9172472f63e
+- net-mqtt-0.7.0.1@sha256:07f966e800f9a5a5803fa72bd9145d832517e4adea34ee84234056d53ffea3d4,4131
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

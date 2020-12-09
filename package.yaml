@@ -23,11 +23,16 @@ dependencies:
 - base >= 4.7 && < 5
 - async
 - brick
+- conduit
 - JuicyPixels
-- lens
+- microlens-platform
+- mtl
 - optparse-applicative
+- qd
+- template-haskell
 - text
 - typed-process
+- unordered-containers
 - vty
 
 default-extensions:
