@@ -1,0 +1,71 @@
+cabal-version: 3.0
+
+name:           q
+version:        0.1.0.0
+license:        NONE
+build-type:     Simple
+extra-source-files:
+    README.md
+
+source-repository head
+  type: git
+  location: https://git.c3pb.de/jens/q.git
+
+common shared-properties
+  default-extensions:
+    LambdaCase
+    MultiWayIf
+    NamedFieldPuns
+    OverloadedStrings
+    ScopedTypeVariables
+    NamedFieldPuns
+  build-depends:
+    JuicyPixels,
+    async,
+    base >=4.7 && <5,
+    brick,
+    conduit,
+    microlens-platform,
+    mtl,
+    optparse-applicative,
+    qd,
+    template-haskell,
+    text,
+    typed-process,
+    unordered-containers,
+    vty
+  default-language: Haskell2010
+  ghc-options: -fwarn-unused-do-bind -fwarn-tabs -Wall
+
+common shared-executable-properties
+  import: shared-properties
+  ghc-options: -fwarn-unused-do-bind -fwarn-tabs -Wall -threaded -rtsopts "-with-rtsopts=-N -I0"
+
+library
+  import: shared-properties
+  exposed-modules:
+    Q.AlarmClock
+    Q.Cli
+    Q.Dashboard
+    Q.G815
+    Q.Pomodoro
+    Q.Wallpaper
+  hs-source-dirs:
+    src
+
+executable q
+  import: shared-executable-properties
+  build-depends:
+    q
+  main-is: Main.hs
+  hs-source-dirs:
+    app
+
+test-suite q-test
+  import: shared-executable-properties
+  type: exitcode-stdio-1.0
+  build-depends:
+    q
+  main-is: Spec.hs
+  hs-source-dirs:
+    test
