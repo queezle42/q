@@ -48,7 +48,7 @@ app = App { appDraw, appChooseCursor, appHandleEvent, appStartEvent, appAttrMap 
 
     appHandleEvent state (MouseDown vp Vty.BScrollDown [] _loc) = vScrollBy (viewportScroll vp) 1 >> continue state{lastEvent=Nothing}
     appHandleEvent state (MouseDown vp Vty.BScrollUp [] _loc) = vScrollBy (viewportScroll vp) (-1) >> continue state{lastEvent=Nothing}
-    
+
     appHandleEvent state event = continue state {lastEvent=Just event}
 
     appStartEvent :: State -> EventM Name State
