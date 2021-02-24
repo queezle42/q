@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Q.G815 (
+
+module Q.Hardware.G815 (
   run
 ) where
 
@@ -26,6 +27,7 @@ type Color = Text
 
 data G815 = G815 (MVar G815State) (G815State -> IO ())
 data G815State = G815State {
+  idle :: Bool,
   defaultColor :: Maybe Color,
   groups :: HM.HashMap Text Color,
   keys :: HM.HashMap Text Color
@@ -50,8 +52,12 @@ run = withConnectTCP $ \qdInterface -> do
     setup :: G815 -> ActorSetup (IO ())
     setup g815 = do
       keysSetupAction <- sequence_ <$> traverse setupKey keys
-      property <- createProperty "default"
-      return $ keysSetupAction >> void (subscribe property $ updateG815 g815 . setDefaultColor . fromRight Nothing . snd)
+      defaultProperty <- createProperty "default"
+      idleProperty <- createProperty "idle"
+      return $ do
+        keysSetupAction
+        void $ subscribe defaultProperty $ updateG815 g815 . setDefaultColor . fromRight Nothing . snd
+        void $ subscribe idleProperty $ updateG815 g815 . (assign _idle) . fromRight False . snd
       where
         setupKey :: Text -> ActorSetup (IO ())
         setupKey key = do
@@ -78,6 +84,7 @@ setKey key color = _keys . at key .= color
 
 defaultState :: G815State
 defaultState = G815State {
+  idle = False,
   defaultColor = Nothing,
   groups = HM.fromList [("multimedia", "ff5000"), ("indicators", "ff5000")],
   keys = HM.empty
@@ -109,8 +116,10 @@ output = awaitForever $ \s -> render s .| outputFrame
       liftIO $ hFlush stdout
 
 render :: Monad m => G815State -> ConduitT i Text m ()
-render G815State{defaultColor, groups, keys} = do
-  yield $ "a " <> fromMaybe "000000" defaultColor
-  when (not $ HM.member "logo" keys) $ yield "k logo 000000"
-  forM_ (HM.toList groups) $ \(key, color) -> yield ("g " <> key <> " " <> color)
-  forM_ (HM.toList keys) $ \(key, color) -> yield ("k " <> key <> " " <> color)
+render G815State{idle, defaultColor, groups, keys} = if idle
+  then yield "a 000000"
+  else do
+    yield $ "a " <> fromMaybe "ff0000" defaultColor
+    when (not $ HM.member "logo" keys) $ yield "k logo 000000"
+    forM_ (HM.toList groups) $ \(key, color) -> yield ("g " <> key <> " " <> color)
+    forM_ (HM.toList keys) $ \(key, color) -> yield ("k " <> key <> " " <> color)

@@ -47,7 +47,8 @@ library
     Q.AlarmClock
     Q.Cli
     Q.Dashboard
-    Q.G815
+    Q.Hardware.G815
+    Q.Hardware.BeatStep
     Q.Pomodoro
     Q.Wallpaper
   hs-source-dirs:
