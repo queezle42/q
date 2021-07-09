@@ -1,26 +1,33 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+-- For rpc:
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE EmptyDataDeriving #-}
+
 module Q.Hardware.G815 (
-  run
+  run,
+  runSetIdle,
 ) where
 
 import Conduit
+import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import Control.Monad.State.Lazy
 import System.IO (stdout, hFlush)
-import Data.Either (fromRight)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Tuple (swap)
 import qualified Data.Text.IO as T
 import qualified Data.HashMap.Strict as HM
 import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
-import Qd
-import Qd.Interface
-import Qd.QdProtocol.Client (withConnectTCP)
+import Network.Rpc
+import Network.Rpc.SocketLocation
 
 
 type Color = Text
@@ -34,35 +41,43 @@ data G815State = G815State {
 }
   deriving (Eq, Show)
 
-makeLensesWith (lensRules & lensField .~ (\_ _ -> pure . TopName . mkName . ("_" <>) . nameBase)) ''G815State
+$(makeLensesWith (lensRules & lensField .~ (\_ _ -> pure . TopName . mkName . ("_" <>) . nameBase)) ''G815State)
+
+$(makeRpc $ rpcApi "G815" [
+    rpcFunction "setIdle" $ do
+      addArgument "idle" [t|Bool|]
+  ]
+ )
+
+socketLocation :: IO FilePath
+socketLocation = sessionSocketPath "q-g815"
+
+
+withRpcClient :: (Client G815Protocol -> IO a) -> IO a
+withRpcClient action = do
+  loc <- socketLocation
+  withClientUnix loc action
+
+runSetIdle :: Bool -> IO ()
+runSetIdle value = withRpcClient $ \client -> setIdle client value
 
 run :: IO ()
-run = withConnectTCP $ \qdInterface -> do
+run = do
   outboxMVar <- newMVar defaultState
   g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  join $ runActorSetup qdInterface [] defaultActorConfiguration{actorName=Just "g815"} $ setup g815
+  rpcServerTask <- async $ listenUnix @G815Protocol (rpcImpl g815) =<< socketLocation
+  renderTask <- async $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
 
-  runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
+  void $ waitAnyCancel [renderTask, rpcServerTask]
   where
     source :: IO G815State -> ConduitT () G815State IO ()
     source getStateUpdate = forever $ yield =<< liftIO getStateUpdate
-    keys :: [Text]
-    keys = ["logo", "esc", "g1", "g2", "g3", "g4", "g5"] <> (T.singleton <$> ['a'..'z'] <> ['0'..'9']) <> (T.cons 'f' . T.pack . show <$> ([1..12] :: [Int]))
-    setup :: G815 -> ActorSetup (IO ())
-    setup g815 = do
-      keysSetupAction <- sequence_ <$> traverse setupKey keys
-      defaultProperty <- createProperty "default"
-      idleProperty <- createProperty "idle"
-      return $ do
-        keysSetupAction
-        void $ subscribe defaultProperty $ updateG815 g815 . setDefaultColor . fromRight Nothing . snd
-        void $ subscribe idleProperty $ updateG815 g815 . (assign _idle) . fromRight False . snd
-      where
-        setupKey :: Text -> ActorSetup (IO ())
-        setupKey key = do
-          property <- createProperty key
-          return $ void $ subscribe property $ updateG815 g815 . setKey key . fromRight Nothing . snd
+
+rpcImpl :: G815 -> G815ProtocolImpl
+rpcImpl g815 = G815ProtocolImpl {
+  setIdleImpl = updateG815 g815 . assign _idle
+}
 
 
 updateG815' :: G815 -> (G815State -> (G815State, a)) -> IO a
@@ -120,6 +135,6 @@ render G815State{idle, defaultColor, groups, keys} = if idle
   then yield "a 000000"
   else do
     yield $ "a " <> fromMaybe "ff0000" defaultColor
-    when (not $ HM.member "logo" keys) $ yield "k logo 000000"
+    unless (HM.member "logo" keys) $ yield "k logo 000000"
     forM_ (HM.toList groups) $ \(key, color) -> yield ("g " <> key <> " " <> color)
     forM_ (HM.toList keys) $ \(key, color) -> yield ("k " <> key <> " " <> color)

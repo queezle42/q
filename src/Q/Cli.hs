@@ -31,13 +31,20 @@ mainParser = hsubparser (
     command "dashboard" (info (pure Q.Dashboard.run) (progDesc "Start the dashboard tui.")) <>
     command "pomodoro" (info (Q.Pomodoro.run <$> pomodoroOptionsParser) (progDesc "Control the pomodoro timer.")) <>
     command "wallpaper" (info (pure generateWallpaper) (progDesc "Generates a new wallpaper.")) <>
-    command "g815" (info (pure Q.Hardware.G815.run) (progDesc "Animate G815 keyboard leds. For consumption by g810-led.")) <>
+    command "g815" (info g815Parser (progDesc "Animate G815 keyboard leds.")) <>
     command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump."))
   )
 
 alarmClockParser :: Parser (IO ())
 alarmClockParser = hsubparser (
     command "daemon" (info (pure Q.AlarmClock.runDaemon) (progDesc "Start the primary alarm clock daemon"))
+  )
+
+g815Parser :: Parser (IO ())
+g815Parser = hsubparser (
+    command "idle" (info (pure (Q.Hardware.G815.runSetIdle True)) (progDesc "Report, that the system is idle.")) <>
+    command "not-idle" (info (pure (Q.Hardware.G815.runSetIdle False)) (progDesc "Report, that the system is no longer idle.")) <>
+    command "daemon" (info (pure Q.Hardware.G815.run) (progDesc "Start the g815 led control daemon. Output should be consumed by g810-led."))
   )
 
 pomodoroOptionsParser :: Parser String

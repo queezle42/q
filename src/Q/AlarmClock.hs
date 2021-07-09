@@ -2,9 +2,7 @@ module Q.AlarmClock (
   runDaemon
 ) where
 
-import Qd
-import Qd.QdProtocol.Client
+import Data.Text (Text)
 
 runDaemon :: IO ()
-runDaemon = withConnectTCP $ \qdInterface -> do
-  undefined
+runDaemon = undefined

@@ -2,20 +2,20 @@
   description = "Hello World!";
 
   inputs = {
-    qd = {
-      url = gitlab:jens/qd?host=git.c3pb.de;
+    qrpc = {
+      url = gitlab:jens/qrpc?host=git.c3pb.de;
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, qd }:
+  outputs = { self, nixpkgs, qrpc }:
   {
     packages.x86_64-linux.q =
       import ./. {
         pkgs = nixpkgs.legacyPackages.x86_64-linux // {
           haskellPackages = nixpkgs.legacyPackages.x86_64-linux.haskellPackages.override {
             overrides = hself: hsuper: {
-              qd = qd.packages.x86_64-linux.qd;
+              qrpc = qrpc.packages.x86_64-linux.qrpc;
             };
           };
         };
