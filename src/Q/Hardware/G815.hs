@@ -27,7 +27,7 @@ import qualified Data.HashMap.Strict as HM
 import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
 import Network.Rpc
-import Network.Rpc.SocketLocation
+import System.Systemd.Daemon (getActivatedSockets)
 
 
 type Color = Text
@@ -49,14 +49,12 @@ $(makeRpc $ rpcApi "G815" [
   ]
  )
 
-socketLocation :: IO FilePath
-socketLocation = sessionSocketPath "q-g815"
+socketLocation :: FilePath
+socketLocation = "/run/q-g815.socket"
 
 
 withRpcClient :: (Client G815Protocol -> IO a) -> IO a
-withRpcClient action = do
-  loc <- socketLocation
-  withClientUnix loc action
+withRpcClient = withClientUnix socketLocation
 
 runSetIdle :: Bool -> IO ()
 runSetIdle value = withRpcClient $ \client -> setIdle client value
@@ -66,7 +64,11 @@ run = do
   outboxMVar <- newMVar defaultState
   g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  rpcServerTask <- async $ listenUnix @G815Protocol (rpcImpl g815) =<< socketLocation
+  listeners <- getActivatedSockets >>= \case
+    Nothing -> fail "No sockets were provided via socket activation"
+    Just activatedSockets -> pure $ ListenSocket <$> activatedSockets
+
+  rpcServerTask <- async $ runServer @G815Protocol (rpcImpl g815) listeners
   renderTask <- async $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
 
   void $ waitAnyCancel [renderTask, rpcServerTask]

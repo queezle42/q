@@ -29,6 +29,7 @@ common shared-properties
     mtl,
     optparse-applicative,
     qrpc,
+    systemd,
     template-haskell,
     text,
     typed-process,
