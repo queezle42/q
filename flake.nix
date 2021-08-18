@@ -5,7 +5,7 @@
     quasar = {
       url = gitlab:jens/quasar?host=git.c3pb.de;
       inputs.nixpkgs.follows = "nixpkgs";
-      follows = "quasar-network/quasar";
+      #follows = "quasar-network/quasar";
     };
     quasar-network = {
       url = gitlab:jens/quasar-network?host=git.c3pb.de;
