@@ -19,6 +19,7 @@ common shared-properties
     OverloadedStrings
     ScopedTypeVariables
     NamedFieldPuns
+    NoImplicitPrelude
   build-depends:
     JuicyPixels,
     async,
@@ -28,7 +29,8 @@ common shared-properties
     microlens-platform,
     mtl,
     optparse-applicative,
-    qrpc,
+    quasar,
+    quasar-network,
     systemd,
     template-haskell,
     text,
@@ -51,6 +53,7 @@ library
     Q.Hardware.G815
     Q.Hardware.BeatStep
     Q.Pomodoro
+    Q.System
     Q.Wallpaper
   hs-source-dirs:
     src

@@ -2,6 +2,7 @@ module Q.Pomodoro where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_)
+import Prelude
 import System.IO (Handle, hFlush, hPutStrLn)
 import System.Process.Typed
 

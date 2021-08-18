@@ -2,24 +2,28 @@
   description = "Hello World!";
 
   inputs = {
-    qrpc = {
-      url = gitlab:jens/qrpc?host=git.c3pb.de;
+    quasar = {
+      url = gitlab:jens/quasar?host=git.c3pb.de;
+      inputs.nixpkgs.follows = "nixpkgs";
+      follows = "quasar-network/quasar";
+    };
+    quasar-network = {
+      url = gitlab:jens/quasar-network?host=git.c3pb.de;
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, qrpc }:
-  {
-    packages.x86_64-linux.q =
-      import ./. {
-        pkgs = nixpkgs.legacyPackages.x86_64-linux // {
-          haskellPackages = nixpkgs.legacyPackages.x86_64-linux.haskellPackages.override {
-            overrides = hself: hsuper: {
-              qrpc = qrpc.packages.x86_64-linux.qrpc;
-            };
-          };
-        };
+  outputs = { self, nixpkgs, quasar, quasar-network }:
+  let
+    lib = nixpkgs.lib;
+    systems = lib.platforms.unix;
+    forAllSystems = f: lib.genAttrs systems (system: f system);
+  in {
+    packages = forAllSystems (system: {
+      q = import ./. {
+        pkgs = import nixpkgs { inherit system; overlays = [ quasar.overlay quasar-network.overlay ]; };
       };
+    });
 
     overlay = self: super:  { q = import ./. { pkgs = self; }; };
 

@@ -11,6 +11,7 @@ import qualified Q.Hardware.G815
 
 import Control.Monad (join)
 import Options.Applicative
+import Prelude
 
 main :: IO ()
 main = join parse

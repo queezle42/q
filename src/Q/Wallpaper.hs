@@ -1,6 +1,7 @@
 module Q.Wallpaper where
 
 import Codec.Picture
+import Prelude
 
 data Dimensions = Dimensions {
   width :: Int,

@@ -26,7 +26,9 @@ import qualified Data.Text.IO as T
 import qualified Data.HashMap.Strict as HM
 import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
-import Network.Rpc
+import Q.System
+import Quasar.Network
+import Quasar.Prelude
 import System.Systemd.Daemon (getActivatedSockets)
 
 
@@ -43,43 +45,38 @@ data G815State = G815State {
 
 $(makeLensesWith (lensRules & lensField .~ (\_ _ -> pure . TopName . mkName . ("_" <>) . nameBase)) ''G815State)
 
-$(makeRpc $ rpcApi "G815" [
-    rpcFunction "setIdle" $ do
-      addArgument "idle" [t|Bool|]
-  ]
- )
 
-socketLocation :: FilePath
-socketLocation = "/run/q-g815.socket"
+--socketLocation :: FilePath
+--socketLocation = "/run/q-g815.socket"
 
 
-withRpcClient :: (Client G815Protocol -> IO a) -> IO a
-withRpcClient = withClientUnix socketLocation
+--withRpcClient :: (Client G815Protocol -> IO a) -> IO a
+--withRpcClient = withClientUnix socketLocation
 
 runSetIdle :: Bool -> IO ()
-runSetIdle value = withRpcClient $ \client -> setIdle client value
+runSetIdle value = undefined -- withRpcClient $ \client -> setIdle client value
 
 run :: IO ()
 run = do
   outboxMVar <- newMVar defaultState
   g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  listeners <- getActivatedSockets >>= \case
-    Nothing -> fail "No sockets were provided via socket activation"
-    Just activatedSockets -> pure $ ListenSocket <$> activatedSockets
+  --listeners <- getActivatedSockets >>= \case
+  --  Nothing -> fail "No sockets were provided via socket activation"
+  --  Just activatedSockets -> pure $ ListenSocket <$> activatedSockets
 
-  rpcServerTask <- async $ runServer @G815Protocol (rpcImpl g815) listeners
-  renderTask <- async $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
+  --rpcServerTask <- async $ runServer @G815Protocol (rpcImpl g815) listeners
+  runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
 
-  void $ waitAnyCancel [renderTask, rpcServerTask]
+  --void $ waitAnyCancel [renderTask, rpcServerTask]
   where
     source :: IO G815State -> ConduitT () G815State IO ()
     source getStateUpdate = forever $ yield =<< liftIO getStateUpdate
 
-rpcImpl :: G815 -> G815ProtocolImpl
-rpcImpl g815 = G815ProtocolImpl {
-  setIdleImpl = updateG815 g815 . assign _idle
-}
+--rpcImpl :: G815 -> G815ProtocolImpl
+--rpcImpl g815 = G815ProtocolImpl {
+--  setIdleImpl = updateG815 g815 . assign _idle
+--}
 
 
 updateG815' :: G815 -> (G815State -> (G815State, a)) -> IO a

@@ -3,6 +3,7 @@ module Q.AlarmClock (
 ) where
 
 import Data.Text (Text)
+import Prelude
 
 runDaemon :: IO ()
 runDaemon = undefined

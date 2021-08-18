@@ -2,6 +2,7 @@ module Q.Hardware.BeatStep where
 
 import Control.Monad (forever)
 import Data.Text (Text)
+import Prelude
 import System.IO (stderr, getLine, hPutStrLn)
 
 run :: IO ()

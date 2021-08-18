@@ -5,6 +5,7 @@ import Control.Monad (when)
 --import Control.Monad.IO.Class (liftIO)
 import Data.Text
 import qualified Graphics.Vty as Vty
+import Prelude
 
 data State = State {
   info :: Text,
