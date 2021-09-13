@@ -11,7 +11,6 @@
 
 module Q.Hardware.G815 (
   run,
-  runSetIdle,
 ) where
 
 import Conduit
@@ -28,7 +27,9 @@ import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
 import Q.System
 import Quasar.Network
+import Quasar.Observable
 import Quasar.Prelude
+import Quasar.ResourceManager
 import System.Systemd.Daemon (getActivatedSockets)
 
 
@@ -36,7 +37,7 @@ type Color = Text
 
 data G815 = G815 (MVar G815State) (G815State -> IO ())
 data G815State = G815State {
-  idle :: Bool,
+  systemIsIdle :: Bool,
   defaultColor :: Maybe Color,
   groups :: HM.HashMap Text Color,
   keys :: HM.HashMap Text Color
@@ -46,38 +47,22 @@ data G815State = G815State {
 $(makeLensesWith (lensRules & lensField .~ (\_ _ -> pure . TopName . mkName . ("_" <>) . nameBase)) ''G815State)
 
 
---socketLocation :: FilePath
---socketLocation = "/run/q-g815.socket"
-
-
---withRpcClient :: (Client G815Protocol -> IO a) -> IO a
---withRpcClient = withClientUnix socketLocation
-
-runSetIdle :: Bool -> IO ()
-runSetIdle value = undefined -- withRpcClient $ \client -> setIdle client value
-
 run :: IO ()
 run = do
   outboxMVar <- newMVar defaultState
   g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  --listeners <- getActivatedSockets >>= \case
-  --  Nothing -> fail "No sockets were provided via socket activation"
-  --  Just activatedSockets -> pure $ ListenSocket <$> activatedSockets
+  withResourceManagerM do
+    withSystemClient $ \client -> do
+      idleObservable <- liftIO $ idle client
+      observe (idleObservable) $ \msg -> do
+        value <- toObservableUpdate msg
+        liftIO $ updateG815 g815 $ assign _systemIsIdle (fromMaybe False value)
 
-  --rpcServerTask <- async $ runServer @G815Protocol (rpcImpl g815) listeners
-  runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
-
-  --void $ waitAnyCancel [renderTask, rpcServerTask]
+      liftIO $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
   where
     source :: IO G815State -> ConduitT () G815State IO ()
     source getStateUpdate = forever $ yield =<< liftIO getStateUpdate
-
---rpcImpl :: G815 -> G815ProtocolImpl
---rpcImpl g815 = G815ProtocolImpl {
---  setIdleImpl = updateG815 g815 . assign _idle
---}
-
 
 updateG815' :: G815 -> (G815State -> (G815State, a)) -> IO a
 updateG815' (G815 stateMVar renderState) fn = do
@@ -98,7 +83,7 @@ setKey key color = _keys . at key .= color
 
 defaultState :: G815State
 defaultState = G815State {
-  idle = False,
+  systemIsIdle = False,
   defaultColor = Nothing,
   groups = HM.fromList [("multimedia", "ff5000"), ("indicators", "ff5000")],
   keys = HM.empty
@@ -130,7 +115,7 @@ output = awaitForever $ \s -> render s .| outputFrame
       liftIO $ hFlush stdout
 
 render :: Monad m => G815State -> ConduitT i Text m ()
-render G815State{idle, defaultColor, groups, keys} = if idle
+render G815State{systemIsIdle, defaultColor, groups, keys} = if systemIsIdle
   then yield "a 000000"
   else do
     yield $ "a " <> fromMaybe "ff0000" defaultColor

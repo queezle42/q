@@ -8,6 +8,7 @@ import qualified Q.Pomodoro
 import Q.Wallpaper (generateWallpaper)
 import qualified Q.Hardware.BeatStep
 import qualified Q.Hardware.G815
+import qualified Q.System
 
 import Control.Monad (join)
 import Options.Applicative
@@ -33,7 +34,8 @@ mainParser = hsubparser (
     command "pomodoro" (info (Q.Pomodoro.run <$> pomodoroOptionsParser) (progDesc "Control the pomodoro timer.")) <>
     command "wallpaper" (info (pure generateWallpaper) (progDesc "Generates a new wallpaper.")) <>
     command "g815" (info g815Parser (progDesc "Animate G815 keyboard leds.")) <>
-    command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump."))
+    command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump.")) <>
+    command "system" (info systemParser (progDesc "TODO"))
   )
 
 alarmClockParser :: Parser (IO ())
@@ -43,9 +45,15 @@ alarmClockParser = hsubparser (
 
 g815Parser :: Parser (IO ())
 g815Parser = hsubparser (
-    command "idle" (info (pure (Q.Hardware.G815.runSetIdle True)) (progDesc "Report, that the system is idle.")) <>
-    command "not-idle" (info (pure (Q.Hardware.G815.runSetIdle False)) (progDesc "Report, that the system is no longer idle.")) <>
     command "daemon" (info (pure Q.Hardware.G815.run) (progDesc "Start the g815 led control daemon. Output should be consumed by g810-led."))
+  )
+
+systemParser :: Parser (IO ())
+systemParser = hsubparser (
+    command "idle" (info (pure (Q.System.execSetIdle True)) (progDesc "Report, that the system is idle.")) <>
+    command "not-idle" (info (pure (Q.System.execSetIdle False)) (progDesc "Report, that the system is no longer idle.")) <>
+    command "watch-idle" (info (pure (Q.System.execWatchIdle)) (progDesc "Print the current idle value to the console.")) <>
+    command "daemon" (info (pure Q.System.execSystemDaemon) (progDesc "Start the system daemon. Expects a control socket passed via socket activation."))
   )
 
 pomodoroOptionsParser :: Parser String

@@ -20,11 +20,13 @@ common shared-properties
     ScopedTypeVariables
     NamedFieldPuns
     NoImplicitPrelude
+    BlockArguments
   build-depends:
     JuicyPixels,
     async,
     base >=4.7 && <5,
     brick,
+    bytestring,
     conduit,
     microlens-platform,
     mtl,
