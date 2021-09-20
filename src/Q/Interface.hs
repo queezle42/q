@@ -11,8 +11,10 @@ import Control.Monad.Catch (displayException)
 import Data.List (intersperse)
 import Data.Maybe (isJust)
 import qualified Graphics.Vty as Vty
+import Q.System
 import Quasar.Async
 import Quasar.Disposable
+import Quasar.Network
 import Quasar.Observable
 import Quasar.Prelude
 import Quasar.ResourceManager
@@ -39,7 +41,7 @@ import System.Random (randomRIO)
 type Key = Unique
 
 
-data UI = UI Layout
+data UIRoot = UIRoot Layout
 
 data Layout where
   SingletonLayout :: Element -> Layout
@@ -61,8 +63,8 @@ data Interactive where
 
 data AppState = AppState {
   lastEvent :: Maybe (BrickEvent Name StateEvent),
-  uiState :: State,
-  notifyChangedStateVar :: TMVar State
+  uiState :: UIState,
+  notifyChangedStateVar :: TMVar UIState
 }
 stepUIState :: MonadResourceManager m => AppState -> m AppState
 stepUIState appState = do
@@ -77,37 +79,39 @@ data Name = MainViewport
   deriving stock (Eq, Ord, Show)
 
 
-class IsNode a where
-  initialState :: MonadResourceManager m => a -> m State
+class IsUI a where
+  initialState :: MonadResourceManager m => a -> m UIState
 
-class IsState a where
-  toState :: a -> State
+class IsState s a | a -> s where
+  toState :: a -> State s
   toState = State
   hasUpdate :: a -> STM Bool
   stepState :: MonadResourceManager m => a -> m a
-  renderState :: a -> Widget Name
+  renderState :: a -> s
 
+type UIState = State (Widget Name)
 
 -- | Quantification wrapper for 'IsState'
-data State = forall a. IsState a => State a
-instance IsState State where
+data State s = forall a. IsState s a => State a
+instance IsState s (State s) where
   toState = id
   hasUpdate (State x) = hasUpdate x
   stepState (State x) = State <$> stepState x
   renderState (State x) = renderState x
 
-packState :: (IsState a, Monad m) => a -> m State
+packState :: (IsState s a, Monad m) => a -> m (State s)
 packState = pure . toState
 
+
 -- | State with a sub-'ResourceManager', i.e. a subtree that can be disposed.
-data SubState = forall a. IsState a => SubState ResourceManager a
-instance IsState SubState where
+data SubState s = forall a. IsState s a => SubState ResourceManager a
+instance IsState s (SubState s) where
   hasUpdate (SubState rm x) = hasUpdate x
   stepState (SubState rm x) = localResourceManager rm $ SubState rm <$> stepState x
   renderState (SubState rm x) = renderState x
-instance IsResourceManager SubState where
+instance IsResourceManager (SubState s) where
   toResourceManager (SubState rm _) = rm
-instance IsDisposable SubState where
+instance IsDisposable (SubState s) where
   toDisposable = toDisposable . toResourceManager
 
 --subState :: (IsState a, MonadResourceManager m) => a -> m State
@@ -116,22 +120,22 @@ instance IsDisposable SubState where
 --  pure $ State rm x
 
 
-instance IsNode UI where
-  initialState (UI layout) = initialState layout
+instance IsUI UIRoot where
+  initialState (UIRoot layout) = initialState layout
 
 -- ** Layout elements
 
-instance IsNode Layout where
+instance IsUI Layout where
   initialState (SingletonLayout element) = initialState element
   initialState (ListLayout elements) = toState . ListState <$> mapM initialState elements
 
-data ListState = ListState [State]
-instance IsState ListState where
+data ListState = ListState [UIState]
+instance IsState (Widget Name) ListState where
   hasUpdate (ListState states) = anyHasUpdates states
   stepState (ListState states) = ListState <$> mapM stepState states
   renderState (ListState states) = vBox $ map renderState states
 
-anyHasUpdates :: [State] -> STM Bool
+anyHasUpdates :: [State s] -> STM Bool
 anyHasUpdates [] = pure False
 anyHasUpdates (x:xs) = hasUpdate x >>= \case
   True -> pure True
@@ -140,22 +144,22 @@ anyHasUpdates (x:xs) = hasUpdate x >>= \case
 
 -- ** Elements
 
-instance IsNode Element where
+instance IsUI Element where
   initialState (ContentElement content) = initialState content
   initialState (InteractiveElement interactive) = initialState interactive
 
 -- ** Content elements
 
-instance IsNode Content where
+instance IsUI Content where
   initialState (Label observable) = do
     state <- newObservableState observable
     packState $ LabelState state
 
 newtype LabelState = LabelState (ObservableState String)
-instance IsState LabelState where
-  hasUpdate (LabelState state) = observableHasUpdate state
-  stepState (LabelState state) = LabelState <$> stepObservableState state
-  renderState (LabelState state) = strWrap $ observableMessageString $ lastObservableState state
+instance IsState (Widget Name) LabelState where
+  hasUpdate (LabelState state) = hasUpdate state
+  stepState (LabelState state) = LabelState <$> stepState state
+  renderState (LabelState state) = strWrap $ observableMessageString $ renderState state
 
 observableMessageString :: ObservableMessage String -> String
 observableMessageString ObservableLoading = "[loading]"
@@ -166,13 +170,13 @@ observableMessageString (ObservableNotAvailable ex) = displayException ex
 
 -- ** Interactive elements
 
-instance IsNode Interactive where
+instance IsUI Interactive where
   initialState (Button content action) = do
     contentState <- initialState content
     packState $ ButtonState contentState action
 
-data ButtonState = ButtonState State (IO ())
-instance IsState ButtonState where
+data ButtonState = ButtonState UIState (IO ())
+instance IsState (Widget Name) ButtonState where
   hasUpdate (ButtonState contentState action) = hasUpdate contentState
   stepState (ButtonState contentState action) = do
     contentState' <- stepState contentState
@@ -184,37 +188,36 @@ instance IsState ButtonState where
 
 data ObservableState a = ObservableState (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
 
+instance IsState (ObservableMessage a) (ObservableState a) where
+  hasUpdate :: ObservableState a -> STM Bool
+  hasUpdate (ObservableState var _) = isJust <$> readTVar var
+  stepState :: MonadResourceManager m => ObservableState a -> m (ObservableState a)
+  stepState state@(ObservableState var value) = do
+    liftIO $ atomically do
+      readTVar var >>= \case
+        Nothing -> pure state
+        Just next -> do
+          writeTVar var Nothing
+          pure $ ObservableState var next
+  renderState :: ObservableState a -> ObservableMessage a
+  renderState (ObservableState _ last) = last
+
 newObservableState :: MonadResourceManager m => Observable a -> m (ObservableState a)
 newObservableState observable = do
   var <- liftIO $ newTVarIO Nothing
   observe observable (liftIO . atomically . writeTVar var . Just)
   pure (ObservableState var ObservableLoading)
 
-observableHasUpdate :: ObservableState a -> STM Bool
-observableHasUpdate (ObservableState var _) = isJust <$> readTVar var
-
-stepObservableState :: MonadResourceManager m => ObservableState a -> m (ObservableState a)
-stepObservableState state@(ObservableState var value) = do
-  liftIO $ atomically do
-    readTVar var >>= \case
-      Nothing -> pure state
-      Just next -> do
-        writeTVar var Nothing
-        pure $ ObservableState var next
-
-lastObservableState :: ObservableState a -> ObservableMessage a
-lastObservableState (ObservableState _ last) = last
-
 
 
 -- * Example UI
 
-exampleUI :: MonadAsync m => Client SystemProtocol -> m UI
+exampleUI :: MonadAsync m => Client SystemProtocol -> m UIRoot
 exampleUI systemClient = do
   idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
   walkers <- replicateM 10 (ContentElement . Label . fmap show <$> randomWalkObservable)
   randoms <- replicateM 100 (ContentElement . Label <$> randomStringObservable)
-  pure $ UI $ ListLayout $ idle : walkers <> randoms
+  pure $ UIRoot $ ListLayout $ idle : walkers <> randoms
 
 randomStringObservable :: MonadAsync m => m (Observable String)
 randomStringObservable = do
@@ -241,7 +244,7 @@ main = withResourceManagerM $ runUnlimitedAsync do
   withSystemClient \client ->
     runUI =<< exampleUI client
 
-runUI :: MonadResourceManager m => UI -> m ()
+runUI :: MonadResourceManager m => UIRoot -> m ()
 runUI ui = do
   uiState <- initialState ui
   notifyChangedStateVar <- liftIO $ newEmptyTMVarIO
@@ -276,7 +279,7 @@ runUI ui = do
         Vty.setMode output Vty.Hyperlink True
       pure vty
 
-    notifyChangedStateThread :: TMVar State -> BChan StateEvent -> IO ()
+    notifyChangedStateThread :: TMVar (State s) -> BChan StateEvent -> IO ()
     notifyChangedStateThread stateVar eventChan = forever do
       atomically $ takeTMVar stateVar >>= hasUpdate >>= (`unless` retry)
       writeBChan eventChan StepStateEvent
