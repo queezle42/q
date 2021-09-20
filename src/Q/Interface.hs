@@ -268,6 +268,12 @@ runUI ui = do
       let output = Vty.outputIface vty
       when (Vty.supportsMode output Vty.Mouse) $
         Vty.setMode output Vty.Mouse True
+      when (Vty.supportsMode output Vty.BracketedPaste) $
+        Vty.setMode output Vty.BracketedPaste True
+      when (Vty.supportsMode output Vty.Focus) $
+        Vty.setMode output Vty.Focus True
+      when (Vty.supportsMode output Vty.Hyperlink) $
+        Vty.setMode output Vty.Hyperlink True
       pure vty
 
     notifyChangedStateThread :: TMVar State -> BChan StateEvent -> IO ()
