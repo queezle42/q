@@ -16,6 +16,8 @@ data Event = Event
 data Name = MainViewport
   deriving (Eq, Ord, Show)
 
+
+
 run :: IO ()
 run = do
   let initialState = State {info="initialized", lastEvent=Nothing}
