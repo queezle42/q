@@ -315,6 +315,7 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
       -> AppState
       -> BrickEvent Name StateEvent
       -> EventM Name (Next AppState)
+    debugEvents handler state event@(AppEvent StepStateEvent) = handler state event
     debugEvents handler state event = handler (state {lastEvent = Just event}) event
 
     stepState :: AppState -> EventM Name AppState
