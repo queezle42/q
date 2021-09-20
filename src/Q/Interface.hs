@@ -209,24 +209,37 @@ lastObservableState (ObservableState _ last) = last
 
 -- * Example UI
 
-exampleUI :: forall m. MonadAsync m => m UI
-exampleUI = UI . ListLayout <$> replicateM 100 (ContentElement . Label <$> randomObservable)
-  where
-    randomObservable :: m (Observable String)
-    randomObservable = do
-      var <- liftIO $ newObservableVar "foobar"
-      async_ $ liftIO $ forever do
-        threadDelay =<< randomRIO (1000000, 10000000)
-        amount <- randomRIO (10, 60)
-        setObservableVar var =<< replicateM amount (randomRIO ('0', 'z'))
-      pure $ toObservable var
+exampleUI :: MonadAsync m => Client SystemProtocol -> m UI
+exampleUI systemClient = do
+  idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
+  walkers <- replicateM 10 (ContentElement . Label . fmap show <$> randomWalkObservable)
+  randoms <- replicateM 100 (ContentElement . Label <$> randomStringObservable)
+  pure $ UI $ ListLayout $ idle : walkers <> randoms
+
+randomStringObservable :: MonadAsync m => m (Observable String)
+randomStringObservable = do
+  var <- liftIO $ newObservableVar "[loading]"
+  async_ $ liftIO $ forever do
+    amount <- randomRIO (10, 60)
+    setObservableVar var =<< replicateM amount (randomRIO ('0', 'z'))
+    threadDelay =<< randomRIO (1000000, 10000000)
+  pure $ toObservable var
+
+randomWalkObservable :: MonadAsync m => m (Observable Int)
+randomWalkObservable = do
+  var <- liftIO $ newObservableVar 0
+  async_ $ liftIO $ forever do
+    modifyObservableVar_ var $ \x -> (x +) <$> randomRIO (-10, 10)
+    threadDelay =<< randomRIO (1000000, 2000000)
+  pure $ toObservable var
 
 
 -- * Main brick application
 
 main :: IO ()
 main = withResourceManagerM $ runUnlimitedAsync do
-  runUI =<< exampleUI
+  withSystemClient \client ->
+    runUI =<< exampleUI client
 
 runUI :: MonadResourceManager m => UI -> m ()
 runUI ui = do
