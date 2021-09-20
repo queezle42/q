@@ -18,6 +18,8 @@
       q = import ./. {
         pkgs = import nixpkgs { inherit system; overlays = [ quasar-network.overlays.quasar quasar-network.overlay ]; };
       };
+      aarch64-multiplatform.q =
+        (import nixpkgs { inherit system; overlays = [ self.overlay quasar-network.overlays.quasar quasar-network.overlay ]; }).pkgsCross.aarch64-multiplatform.haskellPackages.q;
     });
 
     overlay = final: prev: {
