@@ -147,20 +147,32 @@ class IsUI a where
 
 data EventHandler = EventHandler {
   scrollUp :: EventM Name (),
-  scrollDown :: EventM Name ()
+  scrollDown :: EventM Name (),
+  navigateUp :: EventM Name (),
+  navigateDown :: EventM Name (),
+  navigateOut :: EventM Name (),
+  navigateIn :: EventM Name (),
+  activateAction :: EventM Name ()
 }
 
 emptyEventHandler :: EventHandler
 emptyEventHandler =
   EventHandler {
     scrollUp = pure (),
-    scrollDown = pure ()
+    scrollDown = pure (),
+    navigateUp = pure (),
+    navigateDown = pure (),
+    navigateOut = pure (),
+    navigateIn = pure (),
+    activateAction = pure ()
   }
 
 
 class IsState s a | a -> s where
   toState :: a -> State s
   toState = State
+  mapState :: (s -> t) -> a -> State t
+  mapState fn = toState . MappedState fn
   stateEventHandler :: a -> EventHandler
   hasUpdate :: a -> STM Bool
   stepState :: MonadResourceManager m => a -> m a
@@ -173,6 +185,7 @@ type UIState = State (Widget Name)
 data State s = forall a. IsState s a => State a
 instance IsState s (State s) where
   toState = id
+  mapState fn (State x) = mapState fn x
   hasUpdate (State x) = hasUpdate x
   stepState (State x) = State <$> stepState x
   renderState (State x) = renderState x
@@ -180,6 +193,18 @@ instance IsState s (State s) where
 
 toStateM :: (IsState s a, Monad m) => a -> m (State s)
 toStateM = pure . toState
+
+
+instance Functor State where
+  fmap = mapState
+
+data MappedState s = forall t a. IsState t a => MappedState (t -> s) a
+instance IsState s (MappedState s) where
+  hasUpdate (MappedState _ x) = hasUpdate x
+  mapState fnew (MappedState fn x) = toState $ MappedState (fnew . fn) x
+  stepState (MappedState fn x) = MappedState fn <$> stepState x
+  renderState (MappedState fn x) = fn <$> renderState x
+  stateEventHandler (MappedState _ x) = stateEventHandler x
 
 
 -- | State with a sub-'ResourceManager', i.e. a subtree that can be disposed.
@@ -263,21 +288,15 @@ instance IsState (Widget Name) InteractiveState where
 -- ** Content elements
 
 instance IsUI Content where
-  initialState ev (Label observable) = do
-    contentState <- newObservableState ev observable
-    toStateM $ LabelState ev contentState
+  initialState ev (Label observable) = labelWidget <<$>> newObservableState ev observable
 
-data LabelState = LabelState EventHandler (ObservableState String)
-instance IsState (Widget Name) LabelState where
-  hasUpdate (LabelState _ state) = hasUpdate state
-  stepState (LabelState ev state) = LabelState ev <$> stepState state
-  renderState (LabelState _ state) = str . observableMessageString <$> renderState state
-  stateEventHandler (LabelState ev _) = ev
-
-observableMessageString :: ObservableMessage String -> String
-observableMessageString ObservableLoading = "[loading]"
-observableMessageString (ObservableUpdate x) = x
-observableMessageString (ObservableNotAvailable ex) = displayException ex
+labelWidget :: ObservableMessage String -> Widget Name
+labelWidget = str . observableMessageToString
+  where
+    observableMessageToString :: ObservableMessage String -> String
+    observableMessageToString ObservableLoading = "[loading]"
+    observableMessageToString (ObservableUpdate x) = x
+    observableMessageToString (ObservableNotAvailable ex) = displayException ex
 
 
 
@@ -324,11 +343,11 @@ instance IsState (ObservableMessage a) (ObservableState a) where
   renderState (ObservableState _ _ last) = pure last
   stateEventHandler (ObservableState ev _ _) = ev
 
-newObservableState :: MonadResourceManager m => EventHandler -> Observable a -> m (ObservableState a)
+newObservableState :: MonadResourceManager m => EventHandler -> Observable a -> m (State (ObservableMessage a))
 newObservableState ev observable = do
   var <- liftIO $ newTVarIO Nothing
   observe observable (liftIO . atomically . writeTVar var . Just)
-  pure (ObservableState ev var ObservableLoading)
+  toStateM (ObservableState ev var ObservableLoading)
 
 
 
