@@ -73,6 +73,7 @@ library
     brick,
     bytestring,
     conduit,
+    containers,
     exceptions,
     microlens-platform,
     mtl,

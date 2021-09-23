@@ -4,10 +4,14 @@ module Q.Interface (
 
 import Brick
 import Brick.BChan
+import Brick.Util qualified
+import Brick.Widgets.Border (border)
+import Brick.Widgets.Core (joinBorders)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Monad (replicateM)
 import Control.Monad.Catch (displayException)
+import Control.Monad.Reader
 import Data.List (intersperse)
 import Data.Maybe (isJust)
 import qualified Graphics.Vty as Vty
@@ -36,6 +40,8 @@ import System.Random (randomRIO)
 
 
 
+
+
 -- * UI definition
 
 type Key = Unique
@@ -59,11 +65,48 @@ data Interactive where
 
 
 
+-- * Example UI
+
+exampleUI :: MonadAsync m => Client SystemProtocol -> m UIRoot
+exampleUI systemClient = do
+  idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
+  elements <- replicateM 100 do
+    label <- Label <$> randomStringObservable
+    pure $ InteractiveElement $ Button label (pure ())
+  walkers <- replicateM 10 $ ContentElement . Label . fmap show <$> randomWalkObservable
+  pure $ UIRoot $ ListLayout $ idle : walkers <> elements
+
+
+randomStringObservable :: MonadAsync m => m (Observable String)
+randomStringObservable = do
+  var <- liftIO $ newObservableVar "[loading]"
+  async_ $ liftIO $ forever do
+    amount <- randomRIO (10, 60)
+    setObservableVar var =<< replicateM amount (randomRIO ('0', 'z'))
+    threadDelay =<< randomRIO (1000000, 10000000)
+  pure $ toObservable var
+
+
+randomWalkObservable :: MonadAsync m => m (Observable Int)
+randomWalkObservable = do
+  var <- liftIO $ newObservableVar 0
+  async_ $ liftIO $ forever do
+    modifyObservableVar_ var $ \x -> (x +) <$> randomRIO (-10, 10)
+    threadDelay =<< randomRIO (1000000, 2000000)
+  pure $ toObservable var
+
+
+
+
+
 -- * Brick application types
 
 data AppState = AppState {
   lastEvent :: Maybe (BrickEvent Name StateEvent),
   uiState :: UIState,
+  selected :: Maybe Name,
+  initialMouseDownName :: Maybe Name,
+  mouseDownName :: Maybe Name,
   notifyChangedStateVar :: TMVar UIState
 }
 stepUIState :: MonadResourceManager m => AppState -> m AppState
@@ -75,19 +118,24 @@ stepUIState appState = do
 data StateEvent = StepStateEvent
   deriving stock Show
 
-data Name = MainViewport
+type Name = [NamePart]
+data NamePart
+  = MainViewport
+  | SingleName
+  | IndexName Int
   deriving stock (Eq, Ord, Show)
 
 
+
 class IsUI a where
-  initialState :: MonadResourceManager m => a -> m UIState
+  initialState :: MonadResourceManager m => a -> [NamePart] -> m UIState
 
 class IsState s a | a -> s where
   toState :: a -> State s
   toState = State
   hasUpdate :: a -> STM Bool
   stepState :: MonadResourceManager m => a -> m a
-  renderState :: a -> s
+  renderState :: a -> Reader AppState s
 
 type UIState = State (Widget Name)
 
@@ -126,14 +174,15 @@ instance IsUI UIRoot where
 -- ** Layout elements
 
 instance IsUI Layout where
-  initialState (SingletonLayout element) = initialState element
-  initialState (ListLayout elements) = toState . ListState <$> mapM initialState elements
+  initialState (SingletonLayout element) name = initialState element name
+  initialState (ListLayout elements) name =
+    toState . ListState <$> mapM (\(ix, element) -> initialState element (IndexName ix : name)) (zip [0..] elements)
 
 data ListState = ListState [UIState]
 instance IsState (Widget Name) ListState where
   hasUpdate (ListState states) = anyHasUpdates states
   stepState (ListState states) = ListState <$> mapM stepState states
-  renderState (ListState states) = vBox $ map renderState states
+  renderState (ListState states) = vBox <$> mapM renderState states
 
 anyHasUpdates :: [State s] -> STM Bool
 anyHasUpdates [] = pure False
@@ -148,18 +197,45 @@ instance IsUI Element where
   initialState (ContentElement content) = initialState content
   initialState (InteractiveElement interactive) = initialState interactive
 
+-- | Interactive elements which can be selected, activated and optionally capture navigation.
+data InteractiveState = InteractiveState UIState Name
+instance IsState (Widget Name) InteractiveState where
+  hasUpdate (InteractiveState state _) = hasUpdate state
+  stepState (InteractiveState state name) = InteractiveState <$> stepState state <*> pure name
+  renderState (InteractiveState state name) = do
+    AppState{selected} <- ask
+    widget <- renderState state
+    pure if Just name == selected then withAttr selectedAttr widget else widget
+
 -- ** Content elements
 
-instance IsUI Content where
-  initialState (Label observable) = do
-    state <- newObservableState observable
-    packState $ LabelState state
+--instance IsUI Content where
+--  initialState (Label observable) _name = do
+--    state <- newObservableState observable
+--    packState $ LabelState state
+--
+--data LabelState = LabelState (ObservableState String)
+--instance IsState (Widget Name) LabelState where
+--  hasUpdate (LabelState state) = hasUpdate state
+--  stepState (LabelState state) = LabelState <$> stepState state
+--  renderState (LabelState state) = strWrap . observableMessageString <$> renderState state
+--
+--observableMessageString :: ObservableMessage String -> String
+--observableMessageString ObservableLoading = "[loading]"
+--observableMessageString (ObservableUpdate x) = x
+--observableMessageString (ObservableNotAvailable ex) = displayException ex
 
-newtype LabelState = LabelState (ObservableState String)
+
+instance IsUI Content where
+  initialState (Label observable) name = do
+    state <- newObservableState observable
+    packState $ LabelState state name
+
+data LabelState = LabelState (ObservableState String) Name
 instance IsState (Widget Name) LabelState where
-  hasUpdate (LabelState state) = hasUpdate state
-  stepState (LabelState state) = LabelState <$> stepState state
-  renderState (LabelState state) = strWrap $ observableMessageString $ renderState state
+  hasUpdate (LabelState state _) = hasUpdate state
+  stepState (LabelState state name) = LabelState <$> stepState state <*> pure name
+  renderState (LabelState state name) = str . observableMessageString <$> renderState state
 
 observableMessageString :: ObservableMessage String -> String
 observableMessageString ObservableLoading = "[loading]"
@@ -171,27 +247,33 @@ observableMessageString (ObservableNotAvailable ex) = displayException ex
 -- ** Interactive elements
 
 instance IsUI Interactive where
-  initialState (Button content action) = do
-    contentState <- initialState content
-    packState $ ButtonState contentState action
+  initialState (Button content action) name = do
+    contentState <- initialState content name
+    packState $ ButtonState contentState name action
 
-data ButtonState = ButtonState UIState (IO ())
+data ButtonState = ButtonState UIState Name (IO ())
 instance IsState (Widget Name) ButtonState where
-  hasUpdate (ButtonState contentState action) = hasUpdate contentState
-  stepState (ButtonState contentState action) = do
+  hasUpdate (ButtonState contentState name action) = hasUpdate contentState
+  stepState (ButtonState contentState name action) = do
     contentState' <- stepState contentState
-    pure $ ButtonState (contentState') action
-  renderState (ButtonState _contentState _action) = undefined
+    pure $ ButtonState contentState' name action
+  renderState (ButtonState contentState name _action) = do
+    appState <- ask
+    widget <- clickable name <$> renderState contentState
+    pure $ markHover appState name widget
 
+
+markHover :: AppState -> Name -> Widget Name -> Widget Name
+markHover AppState{mouseDownName} name
+  | mouseDownName == Just name = withAttr hoverAttr
+  | otherwise = id
 
 -- ** State utilities
 
 data ObservableState a = ObservableState (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
 
 instance IsState (ObservableMessage a) (ObservableState a) where
-  hasUpdate :: ObservableState a -> STM Bool
   hasUpdate (ObservableState var _) = isJust <$> readTVar var
-  stepState :: MonadResourceManager m => ObservableState a -> m (ObservableState a)
   stepState state@(ObservableState var value) = do
     liftIO $ atomically do
       readTVar var >>= \case
@@ -199,8 +281,7 @@ instance IsState (ObservableMessage a) (ObservableState a) where
         Just next -> do
           writeTVar var Nothing
           pure $ ObservableState var next
-  renderState :: ObservableState a -> ObservableMessage a
-  renderState (ObservableState _ last) = last
+  renderState (ObservableState _ last) = pure last
 
 newObservableState :: MonadResourceManager m => Observable a -> m (ObservableState a)
 newObservableState observable = do
@@ -208,33 +289,6 @@ newObservableState observable = do
   observe observable (liftIO . atomically . writeTVar var . Just)
   pure (ObservableState var ObservableLoading)
 
-
-
--- * Example UI
-
-exampleUI :: MonadAsync m => Client SystemProtocol -> m UIRoot
-exampleUI systemClient = do
-  idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
-  walkers <- replicateM 10 (ContentElement . Label . fmap show <$> randomWalkObservable)
-  randoms <- replicateM 100 (ContentElement . Label <$> randomStringObservable)
-  pure $ UIRoot $ ListLayout $ idle : walkers <> randoms
-
-randomStringObservable :: MonadAsync m => m (Observable String)
-randomStringObservable = do
-  var <- liftIO $ newObservableVar "[loading]"
-  async_ $ liftIO $ forever do
-    amount <- randomRIO (10, 60)
-    setObservableVar var =<< replicateM amount (randomRIO ('0', 'z'))
-    threadDelay =<< randomRIO (1000000, 10000000)
-  pure $ toObservable var
-
-randomWalkObservable :: MonadAsync m => m (Observable Int)
-randomWalkObservable = do
-  var <- liftIO $ newObservableVar 0
-  async_ $ liftIO $ forever do
-    modifyObservableVar_ var $ \x -> (x +) <$> randomRIO (-10, 10)
-    threadDelay =<< randomRIO (1000000, 2000000)
-  pure $ toObservable var
 
 
 -- * Main brick application
@@ -246,11 +300,14 @@ main = withResourceManagerM $ runUnlimitedAsync do
 
 runUI :: MonadResourceManager m => UIRoot -> m ()
 runUI ui = do
-  uiState <- initialState ui
+  uiState <- initialState ui []
   notifyChangedStateVar <- liftIO $ newEmptyTMVarIO
   let initialAppState = AppState {
     lastEvent = Nothing,
     uiState,
+    selected = Nothing,
+    initialMouseDownName = Nothing,
+    mouseDownName = Nothing,
     notifyChangedStateVar
   }
 
@@ -301,8 +358,29 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
     appHandleEvent state (AppEvent StepStateEvent) = continue =<< stepState state
 
     -- Scroll main viewport
-    appHandleEvent state (MouseDown vp Vty.BScrollDown [] _loc) = vScrollBy (viewportScroll vp) 1 >> continue state
-    appHandleEvent state (MouseDown vp Vty.BScrollUp [] _loc) = vScrollBy (viewportScroll vp) (-1) >> continue state
+    appHandleEvent state (MouseDown _vp Vty.BScrollDown [] _loc) = vScrollBy (viewportScroll [MainViewport]) 1 >> continue state
+    appHandleEvent state (MouseDown _vp Vty.BScrollUp [] _loc) = vScrollBy (viewportScroll [MainViewport]) (-1) >> continue state
+
+    -- Mouse events, focus events
+    appHandleEvent state@AppState{initialMouseDownName = Nothing} (MouseDown name Vty.BLeft [] _loc) =
+      continue state {
+        initialMouseDownName = Just name,
+        mouseDownName = Just name
+      }
+    appHandleEvent state@AppState{initialMouseDownName} (MouseDown name Vty.BLeft [] _loc) =
+      continue state {
+        mouseDownName = if initialMouseDownName == Just name then Just name else Nothing
+      }
+    appHandleEvent state (MouseUp name (Just Vty.BLeft) _loc) = continue (resetMouseEvents state)
+    appHandleEvent state (MouseUp name Nothing _loc) = fail "MouseUp without button registered, why did this happen?"
+    appHandleEvent state (VtyEvent (Vty.EvLostFocus)) = continue (resetMouseEvents state)
+    appHandleEvent state (VtyEvent (Vty.EvGainedFocus)) = continue (resetMouseEvents state)
+
+    -- Navigation
+    appHandleEvent state (VtyEvent (Vty.EvKey Vty.KDown [])) = continue =<< navDown state
+    appHandleEvent state (VtyEvent (Vty.EvKey Vty.KUp [])) = continue =<< navUp state
+    appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar 'j') [])) = continue =<< navDown state
+    appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar 'k') [])) = continue =<< navUp state
 
     -- Exit when pressing 'q'
     appHandleEvent state (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt state
@@ -315,7 +393,10 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
     appStartEvent = stepState
 
     appAttrMap :: AppState -> AttrMap
-    appAttrMap _state = attrMap Vty.defAttr []
+    appAttrMap _state = attrMap Vty.defAttr [
+      (hoverAttr, Brick.Util.bg Vty.brightBlack),
+      (selectedAttr, Brick.Util.bg Vty.brightBlack)
+      ]
 
     -- * Other
 
@@ -330,16 +411,41 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
     stepState :: AppState -> EventM Name AppState
     stepState state = liftIO (onResourceManager rm (stepUIState state))
 
+resetMouseEvents :: AppState -> AppState
+resetMouseEvents state =
+  state {
+    initialMouseDownName = Nothing,
+    mouseDownName = Nothing
+  }
+
+-- ** Attributes
+
+hoverAttr = attrName "hover"
+selectedAttr = attrName "selected"
+
+
+-- ** Navigation
+
+navUp :: AppState -> EventM Name AppState
+navUp = pure
+
+navDown :: AppState -> EventM Name AppState
+navDown = pure
+
+-- ** Rendering
 
 mainLayout :: AppState -> Widget Name
 mainLayout state = mainViewport state <=> statusBar state
 
 mainViewport :: AppState -> Widget Name
-mainViewport AppState{uiState} = viewport MainViewport Vertical $ renderState uiState
+mainViewport appState@AppState{uiState} = viewport [MainViewport] Vertical $ runReader (renderState uiState) appState
 
 
 statusBar :: AppState -> Widget Name
-statusBar (AppState{lastEvent}) = str $ "Last event: " <> lastEventStr lastEvent
+statusBar (AppState{lastEvent, mouseDownName, selected}) = str $
+  "Last event: " <> lastEventStr lastEvent <>
+  "; mouseDownName: " <> show mouseDownName <>
+  "; selected: " <> show selected
   where
     lastEventStr :: Maybe (BrickEvent Name StateEvent) -> String
     lastEventStr Nothing = "[none]"
