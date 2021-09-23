@@ -115,29 +115,59 @@ stepUIState appState = do
   liftIO $ atomically $ putTMVar (notifyChangedStateVar appState) nextUIState
   pure appState {uiState = nextUIState}
 
+
 data StateEvent = StepStateEvent
   deriving stock Show
 
-type Name = [NamePart]
-data NamePart
-  = MainViewport
-  | SingleName
-  | IndexName Int
-  deriving stock (Eq, Ord, Show)
+data Name = forall s. Name Unique (State s)
+
+newName :: MonadIO m => State s -> m Name
+newName state = do
+  key <- liftIO newUnique
+  pure $ Name key state
+
+getEventHandler :: Name -> EventHandler
+getEventHandler (Name _ state) = stateEventHandler state
+
+
+instance Eq Name where
+  (Name x _) == (Name y _) = x == y
+
+instance Ord Name where
+  compare (Name x _) (Name y _) = compare x y
+
+instance Show Name where
+  show _ = "Name"
 
 
 
 class IsUI a where
-  initialState :: MonadResourceManager m => a -> [NamePart] -> m UIState
+  initialState :: MonadResourceManager m => EventHandler -> a -> m UIState
+
+
+data EventHandler = EventHandler {
+  scrollUp :: EventM Name (),
+  scrollDown :: EventM Name ()
+}
+
+emptyEventHandler :: EventHandler
+emptyEventHandler =
+  EventHandler {
+    scrollUp = pure (),
+    scrollDown = pure ()
+  }
+
 
 class IsState s a | a -> s where
   toState :: a -> State s
   toState = State
+  stateEventHandler :: a -> EventHandler
   hasUpdate :: a -> STM Bool
   stepState :: MonadResourceManager m => a -> m a
   renderState :: a -> Reader AppState s
 
 type UIState = State (Widget Name)
+
 
 -- | Quantification wrapper for 'IsState'
 data State s = forall a. IsState s a => State a
@@ -146,17 +176,19 @@ instance IsState s (State s) where
   hasUpdate (State x) = hasUpdate x
   stepState (State x) = State <$> stepState x
   renderState (State x) = renderState x
+  stateEventHandler (State x) = stateEventHandler x
 
-packState :: (IsState s a, Monad m) => a -> m (State s)
-packState = pure . toState
+toStateM :: (IsState s a, Monad m) => a -> m (State s)
+toStateM = pure . toState
 
 
 -- | State with a sub-'ResourceManager', i.e. a subtree that can be disposed.
 data SubState s = forall a. IsState s a => SubState ResourceManager a
 instance IsState s (SubState s) where
-  hasUpdate (SubState rm x) = hasUpdate x
+  hasUpdate (SubState _rm x) = hasUpdate x
   stepState (SubState rm x) = localResourceManager rm $ SubState rm <$> stepState x
-  renderState (SubState rm x) = renderState x
+  renderState (SubState _rm x) = renderState x
+  stateEventHandler (SubState _rm x) = stateEventHandler x
 instance IsResourceManager (SubState s) where
   toResourceManager (SubState rm _) = rm
 instance IsDisposable (SubState s) where
@@ -169,20 +201,40 @@ instance IsDisposable (SubState s) where
 
 
 instance IsUI UIRoot where
-  initialState (UIRoot layout) = initialState layout
+  initialState parentEv (UIRoot layout) = do
+    mfix \state -> do
+      name <- newName state
+      let ev = pageViewportEvents name parentEv
+      contentState <- initialState ev layout
+      toStateM $ PageViewport ev name contentState
+
+data PageViewport = PageViewport EventHandler Name UIState
+instance IsState (Widget Name) PageViewport where
+  hasUpdate (PageViewport _ name state) = hasUpdate state
+  stepState (PageViewport ev name state) = PageViewport ev name <$> stepState state
+  renderState (PageViewport _ name state) = viewport name Vertical <$> renderState state
+  stateEventHandler (PageViewport ev _ _) = ev
+
+pageViewportEvents :: Name -> EventHandler -> EventHandler
+pageViewportEvents name ev =
+  ev {
+    scrollUp = vScrollBy (viewportScroll name) 1,
+    scrollDown = vScrollBy (viewportScroll name) (-1)
+  }
 
 -- ** Layout elements
 
 instance IsUI Layout where
-  initialState (SingletonLayout element) name = initialState element name
-  initialState (ListLayout elements) name =
-    toState . ListState <$> mapM (\(ix, element) -> initialState element (IndexName ix : name)) (zip [0..] elements)
+  initialState ev (SingletonLayout element) = initialState ev element
+  initialState ev (ListLayout elements) =
+    toState . ListState ev <$> mapM (initialState ev) elements
 
-data ListState = ListState [UIState]
+data ListState = ListState EventHandler [UIState]
 instance IsState (Widget Name) ListState where
-  hasUpdate (ListState states) = anyHasUpdates states
-  stepState (ListState states) = ListState <$> mapM stepState states
-  renderState (ListState states) = vBox <$> mapM renderState states
+  hasUpdate (ListState ev states) = anyHasUpdates states
+  stepState (ListState ev states) = ListState ev <$> mapM stepState states
+  renderState (ListState ev states) = vBox <$> mapM renderState states
+  stateEventHandler (ListState ev states) = ev
 
 anyHasUpdates :: [State s] -> STM Bool
 anyHasUpdates [] = pure False
@@ -194,48 +246,33 @@ anyHasUpdates (x:xs) = hasUpdate x >>= \case
 -- ** Elements
 
 instance IsUI Element where
-  initialState (ContentElement content) = initialState content
-  initialState (InteractiveElement interactive) = initialState interactive
+  initialState ev (ContentElement content) = initialState ev content
+  initialState ev (InteractiveElement interactive) = initialState ev interactive
 
 -- | Interactive elements which can be selected, activated and optionally capture navigation.
-data InteractiveState = InteractiveState UIState Name
+data InteractiveState = InteractiveState EventHandler Name UIState
 instance IsState (Widget Name) InteractiveState where
-  hasUpdate (InteractiveState state _) = hasUpdate state
-  stepState (InteractiveState state name) = InteractiveState <$> stepState state <*> pure name
-  renderState (InteractiveState state name) = do
+  hasUpdate (InteractiveState ev _ state) = hasUpdate state
+  stepState (InteractiveState ev name state) = InteractiveState ev name <$> stepState state
+  renderState (InteractiveState ev name state) = do
     AppState{selected} <- ask
     widget <- renderState state
     pure if Just name == selected then withAttr selectedAttr widget else widget
+  stateEventHandler (InteractiveState ev _ _) = ev
 
 -- ** Content elements
 
---instance IsUI Content where
---  initialState (Label observable) _name = do
---    state <- newObservableState observable
---    packState $ LabelState state
---
---data LabelState = LabelState (ObservableState String)
---instance IsState (Widget Name) LabelState where
---  hasUpdate (LabelState state) = hasUpdate state
---  stepState (LabelState state) = LabelState <$> stepState state
---  renderState (LabelState state) = strWrap . observableMessageString <$> renderState state
---
---observableMessageString :: ObservableMessage String -> String
---observableMessageString ObservableLoading = "[loading]"
---observableMessageString (ObservableUpdate x) = x
---observableMessageString (ObservableNotAvailable ex) = displayException ex
-
-
 instance IsUI Content where
-  initialState (Label observable) name = do
-    state <- newObservableState observable
-    packState $ LabelState state name
+  initialState ev (Label observable) = do
+    contentState <- newObservableState ev observable
+    toStateM $ LabelState ev contentState
 
-data LabelState = LabelState (ObservableState String) Name
+data LabelState = LabelState EventHandler (ObservableState String)
 instance IsState (Widget Name) LabelState where
-  hasUpdate (LabelState state _) = hasUpdate state
-  stepState (LabelState state name) = LabelState <$> stepState state <*> pure name
-  renderState (LabelState state name) = str . observableMessageString <$> renderState state
+  hasUpdate (LabelState _ state) = hasUpdate state
+  stepState (LabelState ev state) = LabelState ev <$> stepState state
+  renderState (LabelState _ state) = str . observableMessageString <$> renderState state
+  stateEventHandler (LabelState ev _) = ev
 
 observableMessageString :: ObservableMessage String -> String
 observableMessageString ObservableLoading = "[loading]"
@@ -247,20 +284,23 @@ observableMessageString (ObservableNotAvailable ex) = displayException ex
 -- ** Interactive elements
 
 instance IsUI Interactive where
-  initialState (Button content action) name = do
-    contentState <- initialState content name
-    packState $ ButtonState contentState name action
+  initialState ev (Button content action) = do
+    contentState <- initialState ev content
+    mfix \state -> do
+      name <- newName state
+      toStateM $ ButtonState ev contentState name action
 
-data ButtonState = ButtonState UIState Name (IO ())
+data ButtonState = ButtonState EventHandler UIState Name (IO ())
 instance IsState (Widget Name) ButtonState where
-  hasUpdate (ButtonState contentState name action) = hasUpdate contentState
-  stepState (ButtonState contentState name action) = do
+  hasUpdate (ButtonState ev contentState name action) = hasUpdate contentState
+  stepState (ButtonState ev contentState name action) = do
     contentState' <- stepState contentState
-    pure $ ButtonState contentState' name action
-  renderState (ButtonState contentState name _action) = do
+    pure $ ButtonState ev contentState' name action
+  renderState (ButtonState ev contentState name _action) = do
     appState <- ask
     widget <- clickable name <$> renderState contentState
     pure $ markHover appState name widget
+  stateEventHandler (ButtonState ev _ _ _) = ev
 
 
 markHover :: AppState -> Name -> Widget Name -> Widget Name
@@ -270,24 +310,25 @@ markHover AppState{mouseDownName} name
 
 -- ** State utilities
 
-data ObservableState a = ObservableState (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
+data ObservableState a = ObservableState EventHandler (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
 
 instance IsState (ObservableMessage a) (ObservableState a) where
-  hasUpdate (ObservableState var _) = isJust <$> readTVar var
-  stepState state@(ObservableState var value) = do
+  hasUpdate (ObservableState _ var _) = isJust <$> readTVar var
+  stepState state@(ObservableState ev var value) = do
     liftIO $ atomically do
       readTVar var >>= \case
         Nothing -> pure state
         Just next -> do
           writeTVar var Nothing
-          pure $ ObservableState var next
-  renderState (ObservableState _ last) = pure last
+          pure $ ObservableState ev var next
+  renderState (ObservableState _ _ last) = pure last
+  stateEventHandler (ObservableState ev _ _) = ev
 
-newObservableState :: MonadResourceManager m => Observable a -> m (ObservableState a)
-newObservableState observable = do
+newObservableState :: MonadResourceManager m => EventHandler -> Observable a -> m (ObservableState a)
+newObservableState ev observable = do
   var <- liftIO $ newTVarIO Nothing
   observe observable (liftIO . atomically . writeTVar var . Just)
-  pure (ObservableState var ObservableLoading)
+  pure (ObservableState ev var ObservableLoading)
 
 
 
@@ -300,7 +341,7 @@ main = withResourceManagerM $ runUnlimitedAsync do
 
 runUI :: MonadResourceManager m => UIRoot -> m ()
 runUI ui = do
-  uiState <- initialState ui []
+  uiState <- initialState emptyEventHandler ui
   notifyChangedStateVar <- liftIO $ newEmptyTMVarIO
   let initialAppState = AppState {
     lastEvent = Nothing,
@@ -358,8 +399,10 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
     appHandleEvent state (AppEvent StepStateEvent) = continue =<< stepState state
 
     -- Scroll main viewport
-    appHandleEvent state (MouseDown _vp Vty.BScrollDown [] _loc) = vScrollBy (viewportScroll [MainViewport]) 1 >> continue state
-    appHandleEvent state (MouseDown _vp Vty.BScrollUp [] _loc) = vScrollBy (viewportScroll [MainViewport]) (-1) >> continue state
+    appHandleEvent state (MouseDown name Vty.BScrollDown [] _loc) =
+      scrollUp (getEventHandler name) >> continue state
+    appHandleEvent state (MouseDown name Vty.BScrollUp [] _loc) =
+      scrollDown (getEventHandler name) >> continue state
 
     -- Mouse events, focus events
     appHandleEvent state@AppState{initialMouseDownName = Nothing} (MouseDown name Vty.BLeft [] _loc) =
@@ -438,7 +481,7 @@ mainLayout :: AppState -> Widget Name
 mainLayout state = mainViewport state <=> statusBar state
 
 mainViewport :: AppState -> Widget Name
-mainViewport appState@AppState{uiState} = viewport [MainViewport] Vertical $ runReader (renderState uiState) appState
+mainViewport appState@AppState{uiState} = runReader (renderState uiState) appState
 
 
 statusBar :: AppState -> Widget Name
