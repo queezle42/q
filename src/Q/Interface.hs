@@ -44,7 +44,6 @@ import System.Random (randomRIO)
 
 -- * UI definition
 
-type Key = Unique
 
 
 data UIRoot = UIRoot Layout
@@ -62,6 +61,7 @@ data Content where
 
 data Interactive where
   Button :: Content -> IO () -> Interactive
+  --SubPage :: Content -> Observable UIRoot -> Interactive
 
 
 
@@ -70,30 +70,48 @@ data Interactive where
 exampleUI :: MonadAsync m => Client SystemProtocol -> m UIRoot
 exampleUI systemClient = do
   idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
-  elements <- replicateM 100 do
-    label <- Label <$> randomStringObservable
-    pure $ InteractiveElement $ Button label (pure ())
-  walkers <- replicateM 10 $ ContentElement . Label . fmap show <$> randomWalkObservable
-  pure $ UIRoot $ ListLayout $ idle : walkers <> elements
+  buttons <- replicateM 20 $ InteractiveElement <$> clickMeButton
+  elements <- replicateM 10 $ ContentElement <$> randomString
+  walkers <- replicateM 10 $ ContentElement <$> randomWalkObservable
+  pure $ UIRoot $ ListLayout $ idle : buttons <> walkers <> elements
 
 
-randomStringObservable :: MonadAsync m => m (Observable String)
-randomStringObservable = do
+randomString :: MonadAsync m => m Content
+randomString = do
   var <- liftIO $ newObservableVar "[loading]"
   async_ $ liftIO $ forever do
     amount <- randomRIO (10, 60)
     setObservableVar var =<< replicateM amount (randomRIO ('0', 'z'))
     threadDelay =<< randomRIO (1000000, 10000000)
-  pure $ toObservable var
+  pure $ Label $ toObservable var
 
 
-randomWalkObservable :: MonadAsync m => m (Observable Int)
+randomWalkObservable :: MonadAsync m => m Content
 randomWalkObservable = do
-  var <- liftIO $ newObservableVar 0
+  var <- liftIO $ newObservableVar (0 :: Int)
   async_ $ liftIO $ forever do
     modifyObservableVar_ var $ \x -> (x +) <$> randomRIO (-10, 10)
     threadDelay =<< randomRIO (1000000, 2000000)
-  pure $ toObservable var
+  pure $ Label $ show <$> toObservable var
+
+
+clickMeButton :: MonadAsync m => m Interactive
+clickMeButton = do
+  var <- liftIO $ newObservableVar "Click me!"
+  activeVar <- liftIO $ newTVarIO False
+  async_ $ liftIO $ forever do
+    atomically do
+      active <- readTVar activeVar
+      unless active retry
+    delay <- randomRIO (0, 1000000)
+    forM [1..30] \i -> do
+      setObservableVar var $ (replicate i '=') <> ">"
+      threadDelay delay
+    atomically $ writeTVar activeVar False
+    setObservableVar var "Click me again!"
+  let label = Label $ toObservable var
+  pure $ Button label (atomically $ writeTVar activeVar True)
+
 
 
 
@@ -126,8 +144,8 @@ newName state = do
   key <- liftIO newUnique
   pure $ Name key state
 
-getEventHandler :: Name -> EventHandler
-getEventHandler (Name _ state) = stateEventHandler state
+getEvents :: Name -> Events
+getEvents (Name _ state) = stateEventHandler state
 
 
 instance Eq Name where
@@ -142,29 +160,31 @@ instance Show Name where
 
 
 class IsUI a where
-  initialState :: MonadResourceManager m => EventHandler -> a -> m UIState
+  initialState :: MonadResourceManager m => Events -> a -> m UIState
 
 
-data EventHandler = EventHandler {
-  scrollUp :: EventM Name (),
-  scrollDown :: EventM Name (),
-  navigateUp :: EventM Name (),
-  navigateDown :: EventM Name (),
-  navigateOut :: EventM Name (),
-  navigateIn :: EventM Name (),
-  activateAction :: EventM Name ()
+
+
+data Events = Events {
+  onScrollUp :: EventM Name (),
+  onScrollDown :: EventM Name (),
+  onSimpleUp :: EventM Name (),
+  onSimpleDown :: EventM Name (),
+  onSimpleOut :: EventM Name (),
+  onSimpleIn :: EventM Name (),
+  onClick :: EventM Name ()
 }
 
-emptyEventHandler :: EventHandler
+emptyEventHandler :: Events
 emptyEventHandler =
-  EventHandler {
-    scrollUp = pure (),
-    scrollDown = pure (),
-    navigateUp = pure (),
-    navigateDown = pure (),
-    navigateOut = pure (),
-    navigateIn = pure (),
-    activateAction = pure ()
+  Events {
+    onScrollUp = pure (),
+    onScrollDown = pure (),
+    onSimpleUp = pure (),
+    onSimpleDown = pure (),
+    onSimpleOut = pure (),
+    onSimpleIn = pure (),
+    onClick = pure ()
   }
 
 
@@ -173,7 +193,7 @@ class IsState s a | a -> s where
   toState = State
   mapState :: (s -> t) -> a -> State t
   mapState fn = toState . MappedState fn
-  stateEventHandler :: a -> EventHandler
+  stateEventHandler :: a -> Events
   hasUpdate :: a -> STM Bool
   stepState :: MonadResourceManager m => a -> m a
   renderState :: a -> Reader AppState s
@@ -233,18 +253,18 @@ instance IsUI UIRoot where
       contentState <- initialState ev layout
       toStateM $ PageViewport ev name contentState
 
-data PageViewport = PageViewport EventHandler Name UIState
+data PageViewport = PageViewport Events Name UIState
 instance IsState (Widget Name) PageViewport where
   hasUpdate (PageViewport _ name state) = hasUpdate state
   stepState (PageViewport ev name state) = PageViewport ev name <$> stepState state
   renderState (PageViewport _ name state) = viewport name Vertical <$> renderState state
   stateEventHandler (PageViewport ev _ _) = ev
 
-pageViewportEvents :: Name -> EventHandler -> EventHandler
+pageViewportEvents :: Name -> Events -> Events
 pageViewportEvents name ev =
   ev {
-    scrollUp = vScrollBy (viewportScroll name) 1,
-    scrollDown = vScrollBy (viewportScroll name) (-1)
+    onScrollUp = vScrollBy (viewportScroll name) 1,
+    onScrollDown = vScrollBy (viewportScroll name) (-1)
   }
 
 -- ** Layout elements
@@ -254,7 +274,7 @@ instance IsUI Layout where
   initialState ev (ListLayout elements) =
     toState . ListState ev <$> mapM (initialState ev) elements
 
-data ListState = ListState EventHandler [UIState]
+data ListState = ListState Events [UIState]
 instance IsState (Widget Name) ListState where
   hasUpdate (ListState ev states) = anyHasUpdates states
   stepState (ListState ev states) = ListState ev <$> mapM stepState states
@@ -275,7 +295,7 @@ instance IsUI Element where
   initialState ev (InteractiveElement interactive) = initialState ev interactive
 
 -- | Interactive elements which can be selected, activated and optionally capture navigation.
-data InteractiveState = InteractiveState EventHandler Name UIState
+data InteractiveState = InteractiveState Events Name UIState
 instance IsState (Widget Name) InteractiveState where
   hasUpdate (InteractiveState ev _ state) = hasUpdate state
   stepState (InteractiveState ev name state) = InteractiveState ev name <$> stepState state
@@ -303,23 +323,26 @@ labelWidget = str . observableMessageToString
 -- ** Interactive elements
 
 instance IsUI Interactive where
-  initialState ev (Button content action) = do
-    contentState <- initialState ev content
+  initialState parentEv (Button content action) = do
     mfix \state -> do
       name <- newName state
-      toStateM $ ButtonState ev contentState name action
+      let ev = parentEv {
+        onClick = liftIO action
+      }
+      contentState <- initialState ev content
+      toStateM $ ButtonState ev contentState name
 
-data ButtonState = ButtonState EventHandler UIState Name (IO ())
+data ButtonState = ButtonState Events UIState Name
 instance IsState (Widget Name) ButtonState where
-  hasUpdate (ButtonState ev contentState name action) = hasUpdate contentState
-  stepState (ButtonState ev contentState name action) = do
+  hasUpdate (ButtonState ev contentState name) = hasUpdate contentState
+  stepState (ButtonState ev contentState name) = do
     contentState' <- stepState contentState
-    pure $ ButtonState ev contentState' name action
-  renderState (ButtonState ev contentState name _action) = do
+    pure $ ButtonState ev contentState' name
+  renderState (ButtonState ev contentState name) = do
     appState <- ask
     widget <- clickable name <$> renderState contentState
     pure $ markHover appState name widget
-  stateEventHandler (ButtonState ev _ _ _) = ev
+  stateEventHandler (ButtonState ev _ _) = ev
 
 
 markHover :: AppState -> Name -> Widget Name -> Widget Name
@@ -329,7 +352,7 @@ markHover AppState{mouseDownName} name
 
 -- ** State utilities
 
-data ObservableState a = ObservableState EventHandler (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
+data ObservableState a = ObservableState Events (TVar (Maybe (ObservableMessage a))) (ObservableMessage a)
 
 instance IsState (ObservableMessage a) (ObservableState a) where
   hasUpdate (ObservableState _ var _) = isJust <$> readTVar var
@@ -343,7 +366,7 @@ instance IsState (ObservableMessage a) (ObservableState a) where
   renderState (ObservableState _ _ last) = pure last
   stateEventHandler (ObservableState ev _ _) = ev
 
-newObservableState :: MonadResourceManager m => EventHandler -> Observable a -> m (State (ObservableMessage a))
+newObservableState :: MonadResourceManager m => Events -> Observable a -> m (State (ObservableMessage a))
 newObservableState ev observable = do
   var <- liftIO $ newTVarIO Nothing
   observe observable (liftIO . atomically . writeTVar var . Just)
@@ -419,9 +442,9 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
 
     -- Scroll main viewport
     appHandleEvent state (MouseDown name Vty.BScrollDown [] _loc) =
-      scrollUp (getEventHandler name) >> continue state
+      onScrollUp (getEvents name) >> continue state
     appHandleEvent state (MouseDown name Vty.BScrollUp [] _loc) =
-      scrollDown (getEventHandler name) >> continue state
+      onScrollDown (getEvents name) >> continue state
 
     -- Mouse events, focus events
     appHandleEvent state@AppState{initialMouseDownName = Nothing} (MouseDown name Vty.BLeft [] _loc) =
@@ -433,7 +456,10 @@ app rm = App { appDraw, appChooseCursor, appHandleEvent = debugEvents appHandleE
       continue state {
         mouseDownName = if initialMouseDownName == Just name then Just name else Nothing
       }
-    appHandleEvent state (MouseUp name (Just Vty.BLeft) _loc) = continue (resetMouseEvents state)
+    appHandleEvent state (MouseUp name (Just Vty.BLeft) _loc) = do
+      when (initialMouseDownName state == Just name) do
+        onClick (getEvents name)
+      continue (resetMouseEvents state)
     appHandleEvent state (MouseUp name Nothing _loc) = fail "MouseUp without button registered, why did this happen?"
     appHandleEvent state (VtyEvent (Vty.EvLostFocus)) = continue (resetMouseEvents state)
     appHandleEvent state (VtyEvent (Vty.EvGainedFocus)) = continue (resetMouseEvents state)
