@@ -26,6 +26,7 @@ import qualified Data.HashMap.Strict as HM
 import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
 import Q.System
+import Quasar.Async
 import Quasar.Network
 import Quasar.Observable
 import Quasar.Prelude
@@ -52,10 +53,11 @@ run = do
   outboxMVar <- newMVar defaultState
   g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  withResourceManagerM do
+  withRootResourceManager do
     withSystemClient $ \client -> do
       idleObservable <- liftIO $ idle client
-      observe (idleObservable) $ \msg -> do
+
+      async_ $ observe (idleObservable) $ \msg -> do
         value <- toObservableUpdate msg
         liftIO $ updateG815 g815 $ assign _systemIsIdle (fromMaybe False value)
 

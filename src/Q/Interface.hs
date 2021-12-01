@@ -67,7 +67,7 @@ data Interactive where
 
 -- * Example UI
 
-exampleUI :: MonadAsync m => Client SystemProtocol -> m UIRoot
+exampleUI :: MonadResourceManager m => Client SystemProtocol -> m UIRoot
 exampleUI systemClient = do
   idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
   buttons <- replicateM 20 $ InteractiveElement <$> clickMeButton
@@ -76,7 +76,7 @@ exampleUI systemClient = do
   pure $ UIRoot $ ListLayout $ idle : buttons <> walkers <> elements
 
 
-randomString :: MonadAsync m => m Content
+randomString :: MonadResourceManager m => m Content
 randomString = do
   var <- liftIO $ newObservableVar "[loading]"
   async_ $ liftIO $ forever do
@@ -86,16 +86,17 @@ randomString = do
   pure $ Label $ toObservable var
 
 
-randomWalkObservable :: MonadAsync m => m Content
+randomWalkObservable :: MonadResourceManager m => m Content
 randomWalkObservable = do
   var <- liftIO $ newObservableVar (0 :: Int)
   async_ $ liftIO $ forever do
-    modifyObservableVar_ var $ \x -> (x +) <$> randomRIO (-10, 10)
+    delta <- randomRIO (-10, 10)
+    modifyObservableVar var (+ delta)
     threadDelay =<< randomRIO (1000000, 2000000)
   pure $ Label $ show <$> toObservable var
 
 
-clickMeButton :: MonadAsync m => m Interactive
+clickMeButton :: MonadResourceManager m => m Interactive
 clickMeButton = do
   var <- liftIO $ newObservableVar "Click me!"
   activeVar <- liftIO $ newTVarIO False
@@ -377,7 +378,7 @@ newObservableState ev observable = do
 -- * Main brick application
 
 main :: IO ()
-main = withResourceManagerM $ runUnlimitedAsync do
+main = withRootResourceManager do
   withSystemClient \client ->
     runUI =<< exampleUI client
 
@@ -394,11 +395,11 @@ runUI ui = do
     notifyChangedStateVar
   }
 
-  withSubResourceManagerM do
+  withScopedResourceManager do
     rm <- askResourceManager
     eventChan <- liftIO $ newBChan 1
 
-    runUnlimitedAsync $ async $ liftIO $
+    async $ liftIO $
       notifyChangedStateThread notifyChangedStateVar eventChan
 
     liftIO do

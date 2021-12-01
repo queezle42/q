@@ -2,14 +2,14 @@
 
 module Q.Cli (main) where
 
-import qualified Q.AlarmClock
-import qualified Q.Dashboard
-import qualified Q.Interface
-import qualified Q.Pomodoro
+import Q.AlarmClock qualified
+import Q.Dashboard qualified
+import Q.Interface qualified
+import Q.Pomodoro qualified
 import Q.Wallpaper (generateWallpaper)
-import qualified Q.Hardware.BeatStep
-import qualified Q.Hardware.G815
-import qualified Q.System
+import Q.Hardware.BeatStep qualified
+import Q.Hardware.G815 qualified
+import Q.System qualified
 
 import Control.Monad (join)
 import Options.Applicative

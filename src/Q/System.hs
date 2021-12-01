@@ -53,19 +53,19 @@ execSystemDaemon = do
 
   handle <- newHandle
 
-  withResourceManagerM do
+  withRootResourceManager do
     observe (idleVar handle) $ \case
       ObservableLoading -> liftIO $ hPutStrLn stderr "Idle loading"
       ObservableUpdate val -> liftIO $ hPutStrLn stderr $ BS8.pack $ "Idle updated: " <> show val
       ObservableNotAvailable ex -> liftIO $ hPutStrLn stderr $ BS8.pack $ "Idle error: " <> show ex
 
-    liftIO $ runServer @SystemProtocol (rpcImpl handle) listeners
+    runServer @SystemProtocol (rpcImpl handle) listeners
 
 execSetIdle :: Bool -> IO ()
-execSetIdle value = withResourceManagerM $ withSystemClient $ \client -> setIdle client value
+execSetIdle value = withRootResourceManager $ withSystemClient $ \client -> setIdle client value
 
 execWatchIdle :: IO ()
-execWatchIdle = withResourceManagerM $ withSystemClient \client -> do
+execWatchIdle = withRootResourceManager $ withSystemClient \client -> do
   idleObservable <- liftIO $ idle client
   observeBlocking (idleObservable) $ \case
     ObservableLoading -> liftIO $ hPutStrLn stderr "Idle loading"
