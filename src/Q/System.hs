@@ -37,7 +37,7 @@ $(makeRpc $ rpcApi "System" $ do
     rpcObservable "idle" [t|Bool|]
  )
 
-unixSocketLocation = "/run/q/socket";
+unixSocketLocation = "/run/q/socket"
 
 data Handle = Handle {
   idleVar :: ObservableVar Bool

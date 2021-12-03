@@ -75,6 +75,7 @@ library
     conduit,
     containers,
     exceptions,
+    inline-c,
     microlens-platform,
     mtl,
     optparse-applicative,
@@ -86,6 +87,7 @@ library
     template-haskell,
     text,
     typed-process,
+    unix,
     unordered-containers,
     vty
   exposed-modules:
@@ -97,6 +99,7 @@ library
     Q.Interface
     Q.Pomodoro
     Q.System
+    Q.VT
     Q.Wallpaper
   hs-source-dirs:
     src

@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+
+set -euo pipefail
+
+exe=exe:q
+
+nix develop -c cabal build $exe
+exe_path=$(nix develop -c cabal list-bin $exe)
+
+sudo $exe_path $@

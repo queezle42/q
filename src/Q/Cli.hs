@@ -10,6 +10,7 @@ import Q.Wallpaper (generateWallpaper)
 import Q.Hardware.BeatStep qualified
 import Q.Hardware.G815 qualified
 import Q.System qualified
+import Q.VT qualified
 
 import Control.Monad (join)
 import Options.Applicative
@@ -29,16 +30,17 @@ parser = info (mainParser <**> helper)
   (fullDesc <> header "q - queezles tools")
 
 mainParser :: Parser (IO ())
-mainParser = hsubparser (
-    command "alarmclock" (info alarmClockParser (progDesc "Alarm clock subcommand.")) <>
-    command "dashboard" (info (pure Q.Dashboard.run) (progDesc "Start the dashboard tui.")) <>
-    command "interface" (info (pure Q.Interface.main) (progDesc "Terminal UI experiments.")) <>
-    command "pomodoro" (info (Q.Pomodoro.run <$> pomodoroOptionsParser) (progDesc "Control the pomodoro timer.")) <>
-    command "wallpaper" (info (pure generateWallpaper) (progDesc "Generates a new wallpaper.")) <>
-    command "g815" (info g815Parser (progDesc "Animate G815 keyboard leds.")) <>
-    command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump.")) <>
+mainParser = hsubparser $ mconcat [
+    command "alarmclock" (info alarmClockParser (progDesc "Alarm clock subcommand.")),
+    command "dashboard" (info (pure Q.Dashboard.run) (progDesc "Start the dashboard tui.")),
+    command "interface" (info (pure Q.Interface.main) (progDesc "Terminal UI experiments.")),
+    command "pomodoro" (info (Q.Pomodoro.run <$> pomodoroOptionsParser) (progDesc "Control the pomodoro timer.")),
+    command "wallpaper" (info (pure generateWallpaper) (progDesc "Generates a new wallpaper.")),
+    command "g815" (info g815Parser (progDesc "Animate G815 keyboard leds.")),
+    command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump.")),
+    command "vt" (info vtParser (progDesc "VT experiments.")),
     command "system" (info systemParser (progDesc "TODO"))
-  )
+  ]
 
 alarmClockParser :: Parser (IO ())
 alarmClockParser = hsubparser (
@@ -57,6 +59,13 @@ systemParser = hsubparser (
     command "watch-idle" (info (pure (Q.System.execWatchIdle)) (progDesc "Print the current idle value to the console.")) <>
     command "daemon" (info (pure Q.System.execSystemDaemon) (progDesc "Start the system daemon. Expects a control socket passed via socket activation."))
   )
+
+vtParser :: Parser (IO ())
+vtParser = hsubparser $ mconcat [
+  command "lockswitch" (info (pure (Q.VT.vtLockSwitch)) (progDesc "Disallow VT switching.")),
+  command "unlockswitch" (info (pure (Q.VT.vtUnlockSwitch)) (progDesc "Allow VT switching.")),
+  command "probe" (info (pure (Q.VT.runProbes)) (progDesc "Probe potential VT devices."))
+  ]
 
 pomodoroOptionsParser :: Parser String
 pomodoroOptionsParser = strArgument (metavar "TASK" <> help "foobar")
