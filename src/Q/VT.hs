@@ -9,9 +9,9 @@ module Q.VT (
 
 import Control.Concurrent
 import Control.Monad.Catch
-import Foreign.Ptr
 import Foreign
 import Foreign.C
+import Foreign.Ptr
 import System.Posix.IO
 import System.Posix.Types (Fd(..))
 import Language.C.Inline qualified as C
@@ -42,7 +42,6 @@ withFd path = bracket aquire closeFd
 -- | ioctl without in/out parameter.
 ioctlDo :: CULong -> Fd -> IO ()
 ioctlDo request (Fd fd) = runInBoundThread do
-  resetErrno
   throwErrnoIfMinus1_ "ioctl" do
     [C.exp| int { ioctl($(int fd), $(unsigned long request)) } |]
 
@@ -53,7 +52,6 @@ isVT :: Fd -> IO Bool
 isVT (Fd fd) = runInBoundThread do
   -- Linux always returns KB_101 if the fd is for a console/VT (see ioctl_console man-page)
   alloca \ptr -> do
-    resetErrno
     x <- [C.exp| int { ioctl($(int fd), KDGKBTYPE, $(char* ptr)) } |]
     if x < 0
       then do
