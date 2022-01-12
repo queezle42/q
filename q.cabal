@@ -99,6 +99,7 @@ library
     Q.Dashboard
     Q.Hardware.G815
     Q.Hardware.BeatStep
+    Q.Home
     Q.Interface
     Q.Mqtt
     Q.Pomodoro

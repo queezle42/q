@@ -4,6 +4,7 @@ module Q.Cli (main) where
 
 import Q.AlarmClock qualified
 import Q.Dashboard qualified
+import Q.Home
 import Q.Interface qualified
 import Q.Pomodoro qualified
 import Q.Wallpaper (generateWallpaper)
@@ -39,7 +40,8 @@ mainParser = hsubparser $ mconcat [
     command "g815" (info g815Parser (progDesc "Animate G815 keyboard leds.")),
     command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump.")),
     command "vt" (info vtParser (progDesc "VT experiments.")),
-    command "system" (info systemParser (progDesc "TODO"))
+    command "system" (info systemParser (progDesc "System management subcommands")),
+    command "home" (info homeParser (progDesc "Home automation subcommands"))
   ]
 
 alarmClockParser :: Parser (IO ())
@@ -66,6 +68,14 @@ vtParser = hsubparser $ mconcat [
   command "unlockswitch" (info (pure (Q.VT.vtUnlockSwitch)) (progDesc "Allow VT switching.")),
   command "probe" (info (pure (Q.VT.runProbes)) (progDesc "Probe potential VT devices."))
   ]
+
+homeParser :: Parser (IO ())
+homeParser = hsubparser $ mconcat [
+  command "daemon" (info (homeDaemon <$> homeDaemonOptionsParser) (progDesc "Run home automation daemon."))
+  ]
+
+homeDaemonOptionsParser :: Parser String
+homeDaemonOptionsParser = strArgument (metavar "MQTT" <> help "MQTT server URI.")
 
 pomodoroOptionsParser :: Parser String
 pomodoroOptionsParser = strArgument (metavar "TASK" <> help "foobar")
