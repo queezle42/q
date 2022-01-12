@@ -25,6 +25,7 @@ statusTopic = "q/home/status"
 kitchenDimmer :: Mqtt -> IkeaDimmerCallbacks
 kitchenDimmer mqtt =
   ikeaDimmerCallbacks {
-    on = setHueState mqtt "zigbee2mqtt/0x0017880100c54096" True,
-    off = setHueState mqtt "zigbee2mqtt/0x0017880100c54096" False
+    on = setHueWhite mqtt "0x0017880100c54096",
+    onLongPress = setHueRainbow mqtt "0x0017880100c54096",
+    off = setHueState mqtt "0x0017880100c54096" False
   }

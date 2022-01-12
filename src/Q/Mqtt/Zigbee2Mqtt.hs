@@ -4,6 +4,8 @@ module Q.Mqtt.Zigbee2Mqtt (
   subscribeIkeaDimmer,
 
   setHueState,
+  setHueWhite,
+  setHueRainbow,
 ) where
 
 import Data.Aeson
@@ -48,13 +50,26 @@ subscribeIkeaDimmer handle switchName callbacks = do
         Just (String "brightness_move_up") -> onLongPress callbacks
         Just (String "brightness_move_down") -> offLongPress callbacks
         Just (String "brightness_stop") -> endLongPress callbacks
-        Just (String action) -> traceIO $ "Unknown switch .action: " <> show action
-        Just action -> traceIO $ "Switch event .action should be a string but is " <> show action
-        Nothing -> traceIO "Switch event has no .action key"
+        Just (String action) -> traceIO $ "Unknown switch action: " <> show action
+        Just action -> traceIO $ "Switch event action should be a string but is " <> show action
+        Nothing -> pure () -- Switch event has no .action key, e.g. when availability is announced
 
 setHueState :: Mqtt -> Topic -> Bool -> IO ()
-setHueState Mqtt{mqttClient} hueTopic state = publish mqttClient (hueTopic <> "/set") (stateMessage state) False
+setHueState mqtt hueTopic state = publishHueMessage mqtt hueTopic (stateMessage state)
   where
     stateMessage :: Bool -> BSL.ByteString
     stateMessage False = "{\"state\":\"off\"}"
     stateMessage True = "{\"state\":\"on\"}"
+
+setHueWhite :: Mqtt -> Topic -> IO ()
+setHueWhite mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+  where
+    msg = "{\"color\":{\"h\":50,\"s\":25},\"brightness\":255,\"transition\":1}"
+
+setHueRainbow :: Mqtt -> Topic -> IO ()
+setHueRainbow mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+  where
+    msg = "{\"color\":{\"h\":0,\"s\":85},\"brightness\":255,\"hue_move\":2,\"transition\":1}"
+
+publishHueMessage :: Mqtt -> Topic -> BSL.ByteString -> IO ()
+publishHueMessage Mqtt{mqttClient} hueTopic msg = publish mqttClient (zigbee2mqtt hueTopic <> "/set") msg False
