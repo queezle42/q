@@ -1,14 +1,8 @@
 module Q.Mqtt (
-  Mqtt,
+  Mqtt(Mqtt, mqttClient),
   connectMqtt,
   subscribeCallback,
   subscribeJson,
-
-  IkeaDimmerCallbacks(..),
-  ikeaDimmerCallbacks,
-  subscribeIkeaDimmer,
-
-  setHueState,
 ) where
 
 import Control.Concurrent.STM
@@ -26,7 +20,7 @@ import Network.MQTT.Topic
 import Network.URI
 
 data Mqtt = Mqtt {
-  client :: MQTTClient,
+  mqttClient :: MQTTClient,
   callbacks :: TVar [Callback],
   awaitable :: Awaitable ()
 }
@@ -41,24 +35,22 @@ data Callback = Callback {
 
 type JsonCallback = forall a. FromJSON a => Mqtt -> Topic -> a -> [Property] -> IO ()
 
-zigbee2mqtt :: Text -> Topic
-zigbee2mqtt name = "zigbee2mqtt/" <> name
 
 connectMqtt :: String -> Topic -> IO Mqtt
 connectMqtt mqttUri statusTopic = mfix \handle -> do
   uri <- case parseURI mqttUri of
            Just uri -> pure uri
            Nothing -> fail "Invalid URI"
-  client <- connectURI (config handle statusTopic) uri
+  mqttClient <- connectURI (config handle statusTopic) uri
 
   callbacks <- newTVarIO []
 
-  publish client statusTopic "online" True
+  publish mqttClient statusTopic "online" True
 
-  awaitable <- toAwaitable <$> unmanagedAsync (waitForClient client)
+  awaitable <- toAwaitable <$> unmanagedAsync (waitForClient mqttClient)
 
   pure Mqtt {
-    client,
+    mqttClient,
     callbacks,
     awaitable
   }
@@ -92,9 +84,9 @@ subscribeSingle client switchTopic = do
 
 
 subscribeCallback :: Mqtt -> Filter -> CallbackFn -> IO ()
-subscribeCallback Mqtt{client, callbacks} topicFilter fn = do
+subscribeCallback Mqtt{mqttClient, callbacks} topicFilter fn = do
   atomically $ modifyTVar callbacks (newCallback : )
-  subscribeSingle client topicFilter
+  subscribeSingle mqttClient topicFilter
   where
     newCallback = Callback {
       topicFilter,
@@ -110,45 +102,3 @@ subscribeJson handle topicFilter fn = do
       case eitherDecode msg of
         Left err -> traceIO $ mconcat ["Failed to decode json message on topic ", show topic, ": ", err]
         Right json -> fn handle' topic json props
-
-
-data IkeaDimmerCallbacks = IkeaDimmerCallbacks {
-  on :: IO (),
-  off :: IO (),
-  onLongPress :: IO (),
-  offLongPress :: IO (),
-  endLongPress :: IO ()
-}
-
-ikeaDimmerCallbacks :: IkeaDimmerCallbacks
-ikeaDimmerCallbacks =
-  IkeaDimmerCallbacks {
-    on = pure (),
-    off = pure (),
-    onLongPress = pure (),
-    offLongPress = pure (),
-    endLongPress = pure ()
-  }
-
-subscribeIkeaDimmer :: Mqtt -> Text -> IkeaDimmerCallbacks -> IO ()
-subscribeIkeaDimmer handle switchName callbacks = do
-  subscribeJson handle (zigbee2mqtt switchName) cb
-  where
-    cb :: Mqtt -> Topic -> Object -> [Property] -> IO ()
-    cb _ _ event _ =
-      case HM.lookup "action" event of
-        Just (String "on") -> on callbacks
-        Just (String "off") -> off callbacks
-        Just (String "brightness_move_up") -> onLongPress callbacks
-        Just (String "brightness_move_down") -> offLongPress callbacks
-        Just (String "brightness_stop") -> endLongPress callbacks
-        Just (String action) -> traceIO $ "Unknown switch .action: " <> show action
-        Just action -> traceIO $ "Switch event .action should be a string but is " <> show action
-        Nothing -> traceIO "Switch event has no .action key"
-
-setHueState :: Mqtt -> Topic -> Bool -> IO ()
-setHueState Mqtt{client} hueTopic state = publish client (hueTopic <> "/set") (stateMessage state) False
-  where
-    stateMessage :: Bool -> BSL.ByteString
-    stateMessage False = "{\"state\":\"off\"}"
-    stateMessage True = "{\"state\":\"on\"}"

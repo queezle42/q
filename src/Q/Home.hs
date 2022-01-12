@@ -10,6 +10,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.HashMap.Strict qualified as HM
 import Data.Text
 import Q.Mqtt
+import Q.Mqtt.Zigbee2Mqtt
 import Quasar
 import Quasar.Prelude
 import Network.MQTT.Client
