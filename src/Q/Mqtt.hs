@@ -62,16 +62,13 @@ config handle statusTopic =
 
 dispatchCallback :: Mqtt -> MQTTClient -> Topic -> BSL.ByteString -> [Property] -> IO ()
 dispatchCallback handle@Mqtt{callbacks} _ topic content properties = do
-  traceIO $ "Received: " <> show topic <> " " <> show content
   cbs <- atomically $ readTVar callbacks
   mapM_ callMatch cbs
   where
     callMatch :: Callback -> IO ()
-    callMatch Callback{topicFilter, callbackFn}
-      | match topicFilter topic = do
-          traceIO $ "Match: " <> show topicFilter
-          callbackFn handle topic content properties
-      | otherwise = traceIO $ "No match: " <> show topicFilter
+    callMatch Callback{topicFilter, callbackFn} =
+      when (match topicFilter topic) do
+        callbackFn handle topic content properties
 
 subscribeSingle :: MQTTClient -> Filter -> IO ()
 subscribeSingle client switchTopic = do
