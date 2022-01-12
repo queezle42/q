@@ -2,12 +2,27 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 1635403963,
-        "narHash": "sha256-0actzfzBAXvvDJ/EvPSGbtCPXUwSObQrcq0RpsPWZgA=",
+        "lastModified": 1640408860,
+        "narHash": "sha256-h2uF3+a8bVfM8SjcS4hLbsOzOuG3qsxuImC0BucWs1Q=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "2deb07f3ac4eeb5de1c12c4ba2911a2eb1f6ed61",
+        "rev": "cb372c3b8880e504b06946e8fb2ca9777c685505",
         "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1640408860,
+        "narHash": "sha256-h2uF3+a8bVfM8SjcS4hLbsOzOuG3qsxuImC0BucWs1Q=",
+        "path": "/nix/store/m6p4m1rs0xi67kaa25bm1rqkm4633qjr-source",
+        "rev": "cb372c3b8880e504b06946e8fb2ca9777c685505",
+        "type": "path"
       },
       "original": {
         "id": "nixpkgs",
@@ -16,10 +31,7 @@
     },
     "quasar": {
       "inputs": {
-        "nixpkgs": [
-          "quasar-network",
-          "nixpkgs"
-        ]
+        "nixpkgs": "nixpkgs_2"
       },
       "locked": {
         "host": "git.c3pb.de",

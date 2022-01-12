@@ -2,6 +2,7 @@
   description = "Hello World!";
 
   inputs = {
+    nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
     quasar-network = {
       url = gitlab:jens/quasar-network?host=git.c3pb.de;
       inputs.nixpkgs.follows = "nixpkgs";

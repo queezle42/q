@@ -33,7 +33,6 @@ run task = do
 
 playGong :: IO ()
 playGong = runProcess_ $ setStderr nullStream $ setStdout nullStream $ shell "mpv --no-terminal --no-config --no-video ~/sounds/gong.mp3"
-  
 
 withQBarBlock :: (Handle -> IO ()) -> IO ()
 withQBarBlock action = do

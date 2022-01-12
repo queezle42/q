@@ -97,8 +97,8 @@ library
     Q.AlarmClock
     Q.Cli
     Q.Dashboard
-    Q.Hardware.G815
     Q.Hardware.BeatStep
+    Q.Hardware.G815
     Q.Home
     Q.Interface
     Q.Mqtt

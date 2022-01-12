@@ -20,6 +20,7 @@ module Q.System (
   idle,
 ) where
 
+import Control.Monad.Catch
 import Quasar.Network
 import Quasar.Network.TH
 import Quasar.Observable
@@ -72,7 +73,7 @@ execWatchIdle = withRootResourceManager $ withSystemClient \client -> do
     ObservableUpdate val -> liftIO $ hPutStrLn stdout $ BS8.pack $ show val
     ObservableNotAvailable ex -> liftIO $ hPutStrLn stderr $ BS8.pack $ "Idle error: " <> show ex
 
-withSystemClient :: MonadResourceManager m => (Client SystemProtocol -> m a) -> m a
+withSystemClient :: (MonadResourceManager m, MonadIO m, MonadMask m) => (Client SystemProtocol -> m a) -> m a
 withSystemClient = withClientUnix @SystemProtocol unixSocketLocation
 
 newHandle :: IO Handle
