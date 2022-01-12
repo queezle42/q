@@ -68,6 +68,7 @@ library
   import: shared-properties
   build-depends:
     JuicyPixels,
+    aeson,
     async,
     base >=4.7 && <5,
     brick,
@@ -78,6 +79,8 @@ library
     inline-c,
     microlens-platform,
     mtl,
+    net-mqtt,
+    network-uri,
     optparse-applicative,
     quasar,
     quasar-network,
@@ -97,6 +100,7 @@ library
     Q.Hardware.G815
     Q.Hardware.BeatStep
     Q.Interface
+    Q.Mqtt
     Q.Pomodoro
     Q.System
     Q.VT
