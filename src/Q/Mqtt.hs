@@ -3,15 +3,15 @@ module Q.Mqtt (
   connectMqtt,
   subscribeCallback,
   subscribeJson,
+
+  -- * Reexports from Network.MQTT
+  Topic,
+  Filter,
 ) where
 
 import Control.Concurrent.STM
 import Data.Aeson
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.HashMap.Strict qualified as HM
-import Data.Text
 import Quasar
 import Quasar.Async.Unmanaged
 import Quasar.Prelude
@@ -32,8 +32,6 @@ data Callback = Callback {
   topicFilter :: Filter,
   callbackFn :: CallbackFn
 }
-
-type JsonCallback = forall a. FromJSON a => Mqtt -> Topic -> a -> [Property] -> IO ()
 
 
 connectMqtt :: String -> Topic -> IO Mqtt
@@ -63,7 +61,7 @@ config handle statusTopic =
   }
 
 dispatchCallback :: Mqtt -> MQTTClient -> Topic -> BSL.ByteString -> [Property] -> IO ()
-dispatchCallback handle@Mqtt{callbacks} client topic content properties = do
+dispatchCallback handle@Mqtt{callbacks} _ topic content properties = do
   traceIO $ "Received: " <> show topic <> " " <> show content
   cbs <- atomically $ readTVar callbacks
   mapM_ callMatch cbs
@@ -101,4 +99,4 @@ subscribeJson handle topicFilter fn = do
     decodeCb handle' topic msg props =
       case eitherDecode msg of
         Left err -> traceIO $ mconcat ["Failed to decode json message on topic ", show topic, ": ", err]
-        Right json -> fn handle' topic json props
+        Right jsonMsg -> fn handle' topic jsonMsg props

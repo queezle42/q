@@ -6,20 +6,13 @@ module Q.Mqtt.Zigbee2Mqtt (
   setHueState,
 ) where
 
-import Control.Concurrent.STM
 import Data.Aeson
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.HashMap.Strict qualified as HM
 import Data.Text
 import Q.Mqtt
-import Quasar
-import Quasar.Async.Unmanaged
 import Quasar.Prelude
 import Network.MQTT.Client as MQTT
-import Network.MQTT.Topic
-import Network.URI
 
 zigbee2mqtt :: Text -> Topic
 zigbee2mqtt name = "zigbee2mqtt/" <> name

@@ -1,7 +1,7 @@
-module Main where
+module Main (main) where
 
 import Prelude
-import qualified Q.Cli
+import Q.Cli qualified
 
 main :: IO ()
 main = Q.Cli.main
