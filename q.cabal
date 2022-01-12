@@ -75,6 +75,7 @@ library
     bytestring,
     conduit,
     containers,
+    dbus,
     exceptions,
     inline-c,
     microlens-platform,
@@ -102,6 +103,7 @@ library
     Q.Home
     Q.Interface
     Q.Mqtt
+    Q.Pinephone
     Q.Pomodoro
     Q.System
     Q.VT

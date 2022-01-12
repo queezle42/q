@@ -10,6 +10,7 @@ import Q.Pomodoro qualified
 import Q.Wallpaper (generateWallpaper)
 import Q.Hardware.BeatStep qualified
 import Q.Hardware.G815 qualified
+import Q.Pinephone qualified
 import Q.System qualified
 import Q.VT qualified
 
@@ -41,6 +42,7 @@ mainParser = hsubparser $ mconcat [
     command "beatstep" (info (pure Q.Hardware.BeatStep.run) (progDesc "Parses BeatStep midi dump from aseqdump.")),
     command "vt" (info vtParser (progDesc "VT experiments.")),
     command "system" (info systemParser (progDesc "System management subcommands")),
+    command "pinephone" (info (pure Q.Pinephone.run) (progDesc "Pinephone manager daemon")),
     command "home" (info homeParser (progDesc "Home automation subcommands"))
   ]
 
