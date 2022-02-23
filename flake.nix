@@ -21,6 +21,8 @@
       };
       aarch64-multiplatform.q =
         (import nixpkgs { inherit system; overlays = [ self.overlay quasar-network.overlays.quasar quasar-network.overlay ]; }).pkgsCross.aarch64-multiplatform.haskellPackages.q;
+
+      static.q = (import nixpkgs { inherit system; overlays = [ self.overlays.static quasar-network.overlays.quasar quasar-network.overlay ]; }).pkgsMusl.haskellPackages.q;
     });
 
     overlay = final: prev: {
@@ -30,6 +32,27 @@
             pkgs = final;
             haskellPackages = hfinal;
           };
+        };
+      };
+    };
+
+    overlays.static = final: prev: {
+      haskell = prev.haskell // {
+        packageOverrides = hfinal: hprev: prev.haskell.packageOverrides hfinal hprev // {
+          q = final.haskell.lib.overrideCabal
+            (import ./. { pkgs = final; haskellPackages = hfinal; })
+            (old: {
+              enableSharedExecutables = false;
+              enableSharedLibraries = false;
+              configureFlags = [
+                "--ghc-option=-optl=-static"
+                "--extra-lib-dirs=${final.gmp6.override { withStatic = true; }}/lib"
+                "--extra-lib-dirs=${final.zlib.static}/lib"
+                "--extra-lib-dirs=${final.libffi.overrideAttrs (old: { dontDisableStatic = true; })}/lib"
+                "--extra-lib-dirs=${final.ncurses.override { enableStatic = true; }}/lib"
+                "--disable-executable-stripping"
+              ];
+            });
         };
       };
     };
