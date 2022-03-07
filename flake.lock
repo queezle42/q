@@ -18,10 +18,8 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1640408860,
-        "narHash": "sha256-h2uF3+a8bVfM8SjcS4hLbsOzOuG3qsxuImC0BucWs1Q=",
-        "path": "/nix/store/m6p4m1rs0xi67kaa25bm1rqkm4633qjr-source",
-        "rev": "cb372c3b8880e504b06946e8fb2ca9777c685505",
+        "narHash": "sha256-We9ECiMglthzbZ5S6Myqqf+RHzBFZPoM2qL5/jDkUjs=",
+        "path": "/nix/store/65cmw2ws80b61dyysmnqn8py9vgqdydn-source",
         "type": "path"
       },
       "original": {
@@ -31,7 +29,10 @@
     },
     "quasar": {
       "inputs": {
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": [
+          "quasar-network",
+          "nixpkgs"
+        ]
       },
       "locked": {
         "host": "git.c3pb.de",
@@ -51,9 +52,7 @@
     },
     "quasar-network": {
       "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ],
+        "nixpkgs": "nixpkgs_2",
         "quasar": "quasar"
       },
       "locked": {
