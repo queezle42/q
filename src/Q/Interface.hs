@@ -10,7 +10,7 @@ import Brick.Widgets.Core (joinBorders)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Monad (replicateM)
-import Control.Monad.Catch (displayException)
+import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.List (intersperse)
 import Data.Maybe (isJust)
@@ -67,7 +67,7 @@ data Interactive where
 
 -- * Example UI
 
-exampleUI :: MonadResourceManager m => Client SystemProtocol -> m UIRoot
+exampleUI :: (MonadResourceManager m, MonadIO m, MonadMask m) => Client SystemProtocol -> m UIRoot
 exampleUI systemClient = do
   idle <- liftIO $ ContentElement . Label . fmap (("System idle: " <>) . show) <$> idle systemClient
   buttons <- replicateM 20 $ InteractiveElement <$> clickMeButton
@@ -76,7 +76,7 @@ exampleUI systemClient = do
   pure $ UIRoot $ ListLayout $ idle : buttons <> walkers <> elements
 
 
-randomString :: MonadResourceManager m => m Content
+randomString :: (MonadResourceManager m, MonadIO m, MonadMask m) => m Content
 randomString = do
   var <- liftIO $ newObservableVar "[loading]"
   async_ $ liftIO $ forever do
@@ -86,7 +86,7 @@ randomString = do
   pure $ Label $ toObservable var
 
 
-randomWalkObservable :: MonadResourceManager m => m Content
+randomWalkObservable :: (MonadResourceManager m, MonadIO m, MonadMask m) => m Content
 randomWalkObservable = do
   var <- liftIO $ newObservableVar (0 :: Int)
   async_ $ liftIO $ forever do
@@ -96,7 +96,7 @@ randomWalkObservable = do
   pure $ Label $ show <$> toObservable var
 
 
-clickMeButton :: MonadResourceManager m => m Interactive
+clickMeButton :: (MonadResourceManager m, MonadIO m, MonadMask m) => m Interactive
 clickMeButton = do
   var <- liftIO $ newObservableVar "Click me!"
   activeVar <- liftIO $ newTVarIO False
@@ -128,7 +128,7 @@ data AppState = AppState {
   mouseDownName :: Maybe Name,
   notifyChangedStateVar :: TMVar UIState
 }
-stepUIState :: MonadResourceManager m => AppState -> m AppState
+stepUIState :: (MonadResourceManager m, MonadIO m) => AppState -> m AppState
 stepUIState appState = do
   nextUIState <- stepState (uiState appState)
   liftIO $ atomically $ putTMVar (notifyChangedStateVar appState) nextUIState
@@ -161,7 +161,7 @@ instance Show Name where
 
 
 class IsUI a where
-  initialState :: MonadResourceManager m => Events -> a -> m UIState
+  initialState :: (MonadResourceManager m, MonadIO m, MonadMask m) => Events -> a -> m UIState
 
 
 
@@ -196,7 +196,7 @@ class IsState s a | a -> s where
   mapState fn = toState . MappedState fn
   stateEventHandler :: a -> Events
   hasUpdate :: a -> STM Bool
-  stepState :: MonadResourceManager m => a -> m a
+  stepState :: (MonadResourceManager m, MonadIO m) => a -> m a
   renderState :: a -> Reader AppState s
 
 type UIState = State (Widget Name)
@@ -367,7 +367,7 @@ instance IsState (ObservableMessage a) (ObservableState a) where
   renderState (ObservableState _ _ last) = pure last
   stateEventHandler (ObservableState ev _ _) = ev
 
-newObservableState :: MonadResourceManager m => Events -> Observable a -> m (State (ObservableMessage a))
+newObservableState :: (MonadResourceManager m, MonadIO m, MonadMask m) => Events -> Observable a -> m (State (ObservableMessage a))
 newObservableState ev observable = do
   var <- liftIO $ newTVarIO Nothing
   observe observable (liftIO . atomically . writeTVar var . Just)
@@ -382,7 +382,7 @@ main = withRootResourceManager do
   withSystemClient \client ->
     runUI =<< exampleUI client
 
-runUI :: MonadResourceManager m => UIRoot -> m ()
+runUI :: (MonadResourceManager m, MonadIO m, MonadMask m) => UIRoot -> m ()
 runUI ui = do
   uiState <- initialState emptyEventHandler ui
   notifyChangedStateVar <- liftIO $ newEmptyTMVarIO
