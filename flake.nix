@@ -38,6 +38,20 @@
     };
 
     defaultPackage.x86_64-linux = self.packages.x86_64-linux.q;
-    devShell.x86_64-linux = self.defaultPackage.x86_64-linux.env;
+
+    devShell = forAllSystems (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in pkgs.mkShell {
+        inputsFrom = pkgs.lib.mapAttrsToList (k: v: v.env or v) self.packages.${system};
+        packages = [
+          pkgs.cabal-install
+          pkgs.zsh
+          pkgs.entr
+          pkgs.ghcid
+          pkgs.haskell-language-server
+        ];
+      }
+    );
   };
 }
