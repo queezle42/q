@@ -2,6 +2,7 @@ module Q.Home (
   homeDaemon,
 ) where
 
+import Control.Concurrent.STM
 import Data.Text
 import Data.ByteString.Lazy qualified as BSL
 import Q.Mqtt
@@ -12,7 +13,34 @@ import Network.MQTT.Client
 
 
 homeDaemon :: String -> IO ()
-data LightPreset = Bright | Colorful | Mood | Off
+data LightLevel = Bright | Colorful | Mood | Off
+  deriving (Eq, Show)
+
+data ButtonRepeat = Initial | Repeat
+  deriving (Eq, Show)
+
+data RoomDefinition = RoomDefinition {
+  lightBright :: IO (),
+  lightColorful :: [IO ()],
+  lightMood :: [IO ()],
+  lightOff :: IO (),
+  preferBright :: Bool
+}
+
+roomDefinition :: RoomDefinition
+roomDefinition = RoomDefinition {
+  lightBright = pure (),
+  lightColorful = [pure ()],
+  lightMood = [pure ()],
+  lightOff = pure (),
+  preferBright = False
+}
+
+data RoomController = RoomController {
+  room :: RoomDefinition,
+  currentLevel :: TVar LightLevel,
+  currentGenerator :: TVar [IO ()]
+}
 
 homeDaemon mqttUri = do
   traceIO $ "Connecting to " <> mqttUri
@@ -21,7 +49,10 @@ homeDaemon mqttUri = do
   traceIO $ "Connected"
   liftIO $ subscribeIkeaDimmer mqtt "Kitchen switch" (kitchenDimmer mqtt)
   liftIO $ subscribeIkeaDimmer mqtt "Bedroom switch" (bedroomDimmer mqtt)
-  liftIO $ subscribeIkeaDimmer mqtt "Hallway switch" (hallwayDimmer mqtt)
+  --liftIO $ subscribeIkeaDimmer mqtt "Hallway switch" (hallwayDimmer mqtt)
+
+  roomHallway <- liftIO $ newRoomController (hallway mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "Hallway switch" (dimmer roomHallway)
 
   await mqtt
 
@@ -31,8 +62,45 @@ statusTopic = "q/home/status"
 kitchenHue :: Text
 kitchenHue = "0x0017880100c54096"
 
-dimmer :: (LightPreset -> IO ()) -> IkeaDimmerCallbacks
-dimmer fn =
+newRoomController :: RoomDefinition -> IO RoomController
+newRoomController room = do
+  -- TODO restore preset when reloading
+  let level = Off
+  currentLevel <- newTVarIO level
+  currentGenerator <- newTVarIO (lightGenerator room level)
+  pure RoomController { room, currentLevel, currentGenerator }
+
+lightGenerator :: RoomDefinition -> LightLevel -> [IO ()]
+lightGenerator room Bright = [lightBright room]
+lightGenerator room Colorful = lightColorful room
+lightGenerator room Mood = lightMood room
+lightGenerator room Off = [lightOff room]
+
+roomLightLevel :: RoomController -> LightLevel -> IO ()
+roomLightLevel RoomController{room, currentLevel, currentGenerator} level = join $ atomically do
+  currentLevel' <- readTVar currentLevel
+  currentGenerator' <- readTVar currentGenerator
+  case (level == currentLevel', currentGenerator') of
+    (True, gen:gs) -> do
+      writeTVar currentGenerator gs
+      pure gen
+    _ -> do
+      writeTVar currentLevel level
+      let (gen:gs) = lightGenerator room level
+      writeTVar currentGenerator gs
+      pure gen
+
+dimmer :: RoomController -> IkeaDimmerCallbacks
+dimmer roomController =
+  ikeaDimmerCallbacks {
+    on = roomLightLevel roomController Colorful,
+    onLongPress = roomLightLevel roomController Bright,
+    off = roomLightLevel roomController Off,
+    offLongPress = roomLightLevel roomController Mood
+  }
+
+fnDimmer :: (LightLevel -> IO ()) -> IkeaDimmerCallbacks
+fnDimmer fn =
   ikeaDimmerCallbacks {
     on = fn Colorful,
     onLongPress = fn Bright,
@@ -51,14 +119,14 @@ kitchenDimmer mqtt =
   }
 
 bedroomDimmer :: Mqtt -> IkeaDimmerCallbacks
-bedroomDimmer mqtt = dimmer (setBedroomPreset mqtt)
+bedroomDimmer mqtt = fnDimmer (setBedroomPreset mqtt)
 
 hallwayDimmer :: Mqtt -> IkeaDimmerCallbacks
-hallwayDimmer mqtt = dimmer (setHallwayPreset mqtt)
+hallwayDimmer mqtt = fnDimmer (setHallwayPreset mqtt)
 
 
 
-setKitchenPreset :: Mqtt -> LightPreset -> IO ()
+setKitchenPreset :: Mqtt -> LightLevel -> IO ()
 setKitchenPreset mqtt preset = do
   hue preset
   switchTasmota mqtt "sonoff01" (stoveLight preset)
@@ -72,7 +140,7 @@ setKitchenPreset mqtt preset = do
     stoveLight Mood = False
     stoveLight Off = False
 
-setBedroomPreset :: Mqtt -> LightPreset -> IO ()
+setBedroomPreset :: Mqtt -> LightLevel -> IO ()
 setBedroomPreset mqtt Bright = do
   ringclock mqtt "k8"
   switchTasmota mqtt "sms04" True
@@ -90,7 +158,7 @@ setBedroomPreset mqtt Off = do
   switchTasmota mqtt "sms04" False
   ringclock mqtt "off"
 
-setHallwayPreset :: Mqtt -> LightPreset -> IO ()
+setHallwayPreset :: Mqtt -> LightLevel -> IO ()
 setHallwayPreset mqtt Bright = do
   fairyLights mqtt "cozy"
   fairyLightsBrightness mqtt "1"
@@ -102,6 +170,20 @@ setHallwayPreset mqtt Mood = do
   fairyLightsBrightness mqtt "0.1"
 setHallwayPreset mqtt Off = do
   fairyLightsBrightness mqtt "0"
+
+hallway :: Mqtt -> RoomDefinition
+hallway mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff }
+  where
+    lightBright = cozy "1"
+    lightColorful = [cozy "0.4", k8 "0.4"]
+    lightMood = [cozy "0.1", k8 "0.1"]
+    lightOff = fairyLightsBrightness mqtt "0"
+    cozy brightness = do
+      fairyLights mqtt "cozy"
+      fairyLightsBrightness mqtt brightness
+    k8 brightness = do
+      fairyLights mqtt "k8"
+      fairyLightsBrightness mqtt brightness
 
 
 switchTasmota :: Mqtt -> Text -> Bool -> IO ()
