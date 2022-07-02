@@ -47,12 +47,12 @@ homeDaemon mqttUri = do
   mqtt <- connectMqtt mqttUri statusTopic
 
   traceIO $ "Connected"
-  liftIO $ subscribeIkeaDimmer mqtt "Kitchen switch" (kitchenDimmer mqtt)
-  liftIO $ subscribeIkeaDimmer mqtt "Bedroom switch" (bedroomDimmer mqtt)
-  --liftIO $ subscribeIkeaDimmer mqtt "Hallway switch" (hallwayDimmer mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_kitchen" (kitchenDimmer mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_1" (bedroomDimmer mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_2" (bedroomDimmer mqtt)
 
   roomHallway <- liftIO $ newRoomController (hallway mqtt)
-  liftIO $ subscribeIkeaDimmer mqtt "Hallway switch" (dimmer roomHallway)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_hallway" (dimmer roomHallway)
 
   await mqtt
 
@@ -60,7 +60,7 @@ statusTopic :: Topic
 statusTopic = "q/home/status"
 
 kitchenHue :: Text
-kitchenHue = "0x0017880100c54096"
+kitchenHue = "hue_kitchen"
 
 newRoomController :: RoomDefinition -> IO RoomController
 newRoomController room = do
