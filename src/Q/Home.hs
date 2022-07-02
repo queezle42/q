@@ -52,7 +52,10 @@ homeDaemon mqttUri = do
   liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_2" (bedroomDimmer mqtt)
 
   roomHallway <- liftIO $ newRoomController (hallway mqtt)
-  liftIO $ subscribeIkeaDimmer mqtt "switch_hallway" (dimmer roomHallway)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_hallway" (dimmerHandlerForRoom roomHallway)
+
+  roomLivingRoom <- liftIO $ newRoomController (livingRoom mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_living_room" (dimmerHandlerForRoom roomLivingRoom)
 
   await mqtt
 
@@ -61,6 +64,9 @@ statusTopic = "q/home/status"
 
 kitchenHue :: Text
 kitchenHue = "hue_kitchen"
+
+livingRoomHue :: Text
+livingRoomHue = "hue_living_room"
 
 newRoomController :: RoomDefinition -> IO RoomController
 newRoomController room = do
@@ -90,8 +96,8 @@ roomLightLevel RoomController{room, currentLevel, currentGenerator} level = join
       writeTVar currentGenerator gs
       pure gen
 
-dimmer :: RoomController -> IkeaDimmerCallbacks
-dimmer roomController =
+dimmerHandlerForRoom :: RoomController -> IkeaDimmerCallbacks
+dimmerHandlerForRoom roomController =
   ikeaDimmerCallbacks {
     on = roomLightLevel roomController Colorful,
     onLongPress = roomLightLevel roomController Bright,
@@ -185,6 +191,13 @@ hallway mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff 
       fairyLights mqtt "k8"
       fairyLightsBrightness mqtt brightness
 
+livingRoom :: Mqtt -> RoomDefinition
+livingRoom mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff }
+  where
+    lightBright = setHueWhite mqtt livingRoomHue
+    lightColorful = [ setHueRainbow mqtt livingRoomHue ]
+    lightMood = [ setHueDimOrange mqtt livingRoomHue ]
+    lightOff = setHueState mqtt livingRoomHue False
 
 switchTasmota :: Mqtt -> Text -> Bool -> IO ()
 switchTasmota Mqtt{mqttClient} name value =
