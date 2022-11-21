@@ -195,7 +195,10 @@ livingRoom :: Mqtt -> RoomDefinition
 livingRoom mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff }
   where
     lightBright = setHueWhite mqtt livingRoomHue
-    lightColorful = [ setHueRainbow mqtt livingRoomHue ]
+    lightColorful = [
+      setHueOrange mqtt livingRoomHue,
+      setHueRainbow mqtt livingRoomHue
+      ]
     lightMood = [ setHueDimOrange mqtt livingRoomHue ]
     lightOff = setHueState mqtt livingRoomHue False
 

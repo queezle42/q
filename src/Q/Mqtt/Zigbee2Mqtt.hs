@@ -6,6 +6,7 @@ module Q.Mqtt.Zigbee2Mqtt (
   setHueState,
   setHueWhite,
   setHueRainbow,
+  setHueOrange,
   setHueDimOrange,
 ) where
 
@@ -71,6 +72,11 @@ setHueRainbow :: Mqtt -> Topic -> IO ()
 setHueRainbow mqtt hueTopic = publishHueMessage mqtt hueTopic msg
   where
     msg = "{\"color\":{\"h\":0,\"s\":85},\"brightness\":255,\"hue_move\":2,\"transition\":1}"
+
+setHueOrange :: Mqtt -> Topic -> IO ()
+setHueOrange mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+  where
+    msg = "{\"color\":{\"h\":40,\"s\":80},\"brightness\":255,\"transition\":1}"
 
 setHueDimOrange :: Mqtt -> Topic -> IO ()
 setHueDimOrange mqtt hueTopic = publishHueMessage mqtt hueTopic msg
