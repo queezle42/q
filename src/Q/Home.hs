@@ -194,13 +194,24 @@ hallway mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff 
 livingRoom :: Mqtt -> RoomDefinition
 livingRoom mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightOff }
   where
-    lightBright = setHueWhite mqtt livingRoomHue
+    lightBright = do
+      setHueWhite mqtt livingRoomHue
+      triangle01 mqtt "warm_white" "0.5"
     lightColorful = [
-      setHueOrange mqtt livingRoomHue,
+      colorfulA mqtt,
+      colorfulB mqtt,
       setHueRainbow mqtt livingRoomHue
       ]
+    colorfulA mqtt = do
+      setHueOrange mqtt livingRoomHue
+      triangle01 mqtt "warm" "0.3"
+    colorfulB mqtt = do
+      setHueOrange mqtt livingRoomHue
+      triangle01 mqtt "peachy" "0.2"
     lightMood = [ setHueDimOrange mqtt livingRoomHue ]
-    lightOff = setHueState mqtt livingRoomHue False
+    lightOff = do
+      setHueState mqtt livingRoomHue False
+      triangle01 mqtt "off" "0.3"
 
 switchTasmota :: Mqtt -> Text -> Bool -> IO ()
 switchTasmota Mqtt{mqttClient} name value =
@@ -227,3 +238,8 @@ fairyLights mqtt = qthingAnimation mqtt "fairy-lights"
 
 fairyLightsBrightness :: Mqtt -> BSL.ByteString -> IO ()
 fairyLightsBrightness Mqtt{mqttClient} brightness = publish mqttClient (mconcat ["device/fairy-lights/update/brightness"]) brightness False
+
+triangle01 :: Mqtt -> BSL.ByteString -> BSL.ByteString -> IO ()
+triangle01 mqtt@Mqtt{mqttClient} animation brightness = do
+  qthingAnimation mqtt "triangle01" animation
+  publish mqttClient (mconcat ["device/triangle01/update/brightness"]) brightness False
