@@ -50,6 +50,7 @@ homeDaemon mqttUri = do
   liftIO $ subscribeIkeaDimmer mqtt "switch_kitchen" (kitchenDimmer mqtt)
   liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_1" (bedroomDimmer mqtt)
   liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_2" (bedroomDimmer mqtt)
+  liftIO $ subscribeIkeaDimmer mqtt "switch_bedroom_3" (bedroomDimmer mqtt)
 
   roomHallway <- liftIO $ newRoomController (hallway mqtt)
   liftIO $ subscribeIkeaDimmer mqtt "switch_hallway" (dimmerHandlerForRoom roomHallway)
@@ -197,21 +198,35 @@ livingRoom mqtt = roomDefinition { lightBright, lightColorful, lightMood, lightO
     lightBright = do
       setHueWhite mqtt livingRoomHue
       triangle01 mqtt "warm_white" "0.5"
+      steve mqtt "worklight"
     lightColorful = [
       colorfulA mqtt,
       colorfulB mqtt,
-      setHueRainbow mqtt livingRoomHue
+      rainbow mqtt
       ]
-    colorfulA mqtt = do
-      setHueOrange mqtt livingRoomHue
-      triangle01 mqtt "warm" "0.3"
-    colorfulB mqtt = do
-      setHueOrange mqtt livingRoomHue
-      triangle01 mqtt "peachy" "0.2"
-    lightMood = [ setHueDimOrange mqtt livingRoomHue ]
+      where
+        colorfulA mqtt = do
+          setHueOrange mqtt livingRoomHue
+          triangle01 mqtt "warm" "0.3"
+          steve mqtt "off"
+        colorfulB mqtt = do
+          setHueOrange mqtt livingRoomHue
+          triangle01 mqtt "peachy" "0.2"
+          steve mqtt "k8"
+        rainbow mqtt = do
+          setHueRainbow mqtt livingRoomHue
+          triangle01 mqtt "rainbow" "0.3"
+          steve mqtt "rgb"
+    lightMood = [
+      do
+        setHueDimOrange mqtt livingRoomHue
+        triangle01 mqtt "cozy" "0.1"
+        steve mqtt "steve"
+      ]
     lightOff = do
       setHueState mqtt livingRoomHue False
       triangle01 mqtt "off" "0.3"
+      steve mqtt "off"
 
 switchTasmota :: Mqtt -> Text -> Bool -> IO ()
 switchTasmota Mqtt{mqttClient} name value =
@@ -243,6 +258,9 @@ triangle01 :: Mqtt -> BSL.ByteString -> BSL.ByteString -> IO ()
 triangle01 mqtt@Mqtt{mqttClient} animation brightness = do
   qthingAnimation mqtt "triangle01" animation
   publish mqttClient (mconcat ["device/triangle01/update/brightness"]) brightness False
+
+steve :: Mqtt -> BSL.ByteString -> IO ()
+steve mqtt@Mqtt{mqttClient} animation = qthingAnimation mqtt "kitchen" animation
 
 stoveLight :: Mqtt -> Bool -> IO ()
 stoveLight mqtt = setSwitchState mqtt "light_stove"
