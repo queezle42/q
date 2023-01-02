@@ -8,6 +8,8 @@ module Q.Mqtt.Zigbee2Mqtt (
   setHueRainbow,
   setHueOrange,
   setHueDimOrange,
+
+  setSwitchState,
 ) where
 
 import Data.Aeson
@@ -57,31 +59,39 @@ subscribeIkeaDimmer handle switchName callbacks = do
         Nothing -> pure () -- Switch event has no .action key, e.g. when availability is announced
 
 setHueState :: Mqtt -> Topic -> Bool -> IO ()
-setHueState mqtt hueTopic state = publishHueMessage mqtt hueTopic (stateMessage state)
+setHueState mqtt hueTopic state = publishSetMessage mqtt hueTopic (stateMessage state)
   where
     stateMessage :: Bool -> BSL.ByteString
     stateMessage False = "{\"state\":\"off\"}"
     stateMessage True = "{\"state\":\"on\"}"
 
 setHueWhite :: Mqtt -> Topic -> IO ()
-setHueWhite mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+setHueWhite mqtt hueTopic = publishSetMessage mqtt hueTopic msg
   where
     msg = "{\"color\":{\"h\":50,\"s\":25},\"brightness\":255,\"transition\":1}"
 
 setHueRainbow :: Mqtt -> Topic -> IO ()
-setHueRainbow mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+setHueRainbow mqtt hueTopic = publishSetMessage mqtt hueTopic msg
   where
     msg = "{\"color\":{\"h\":0,\"s\":85},\"brightness\":255,\"hue_move\":2,\"transition\":1}"
 
 setHueOrange :: Mqtt -> Topic -> IO ()
-setHueOrange mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+setHueOrange mqtt hueTopic = publishSetMessage mqtt hueTopic msg
   where
     msg = "{\"color\":{\"h\":40,\"s\":80},\"brightness\":255,\"transition\":1}"
 
 setHueDimOrange :: Mqtt -> Topic -> IO ()
-setHueDimOrange mqtt hueTopic = publishHueMessage mqtt hueTopic msg
+setHueDimOrange mqtt hueTopic = publishSetMessage mqtt hueTopic msg
   where
     msg = "{\"color\":{\"h\":40,\"s\":100},\"brightness\":85,\"transition\":1}"
 
-publishHueMessage :: Mqtt -> Topic -> BSL.ByteString -> IO ()
-publishHueMessage Mqtt{mqttClient} hueTopic msg = publish mqttClient (zigbee2mqtt hueTopic <> "/set") msg False
+publishSetMessage :: Mqtt -> Topic -> BSL.ByteString -> IO ()
+publishSetMessage Mqtt{mqttClient} deviceName msg = publish mqttClient (zigbee2mqtt deviceName <> "/set") msg False
+
+
+setSwitchState :: Mqtt -> Topic -> Bool -> IO ()
+setSwitchState mqtt deviceName state = publishSetMessage mqtt deviceName (stateMessage state)
+  where
+    stateMessage :: Bool -> BSL.ByteString
+    stateMessage False = "{\"state\":\"off\"}"
+    stateMessage True = "{\"state\":\"on\"}"

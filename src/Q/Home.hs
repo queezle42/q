@@ -135,16 +135,16 @@ hallwayDimmer mqtt = fnDimmer (setHallwayPreset mqtt)
 setKitchenPreset :: Mqtt -> LightLevel -> IO ()
 setKitchenPreset mqtt preset = do
   hue preset
-  switchTasmota mqtt "sonoff01" (stoveLight preset)
+  stoveLight mqtt (stoveLightState preset)
   where
     hue Bright = setHueWhite mqtt kitchenHue
     hue Colorful = setHueRainbow mqtt kitchenHue
     hue Mood = setHueDimOrange mqtt kitchenHue
     hue Off = setHueState mqtt kitchenHue False
-    stoveLight Bright = True
-    stoveLight Colorful = True
-    stoveLight Mood = False
-    stoveLight Off = False
+    stoveLightState Bright = True
+    stoveLightState Colorful = True
+    stoveLightState Mood = False
+    stoveLightState Off = False
 
 setBedroomPreset :: Mqtt -> LightLevel -> IO ()
 setBedroomPreset mqtt Bright = do
@@ -243,3 +243,6 @@ triangle01 :: Mqtt -> BSL.ByteString -> BSL.ByteString -> IO ()
 triangle01 mqtt@Mqtt{mqttClient} animation brightness = do
   qthingAnimation mqtt "triangle01" animation
   publish mqttClient (mconcat ["device/triangle01/update/brightness"]) brightness False
+
+stoveLight :: Mqtt -> Bool -> IO ()
+stoveLight mqtt = setSwitchState mqtt "light_stove"
