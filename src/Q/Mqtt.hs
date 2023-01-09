@@ -9,11 +9,9 @@ module Q.Mqtt (
   Filter,
 ) where
 
-import Control.Concurrent.STM
 import Data.Aeson
 import Data.ByteString.Lazy qualified as BSL
 import Quasar
-import Quasar.Async.Unmanaged
 import Quasar.Prelude
 import Network.MQTT.Client as MQTT
 import Network.MQTT.Topic
@@ -22,10 +20,11 @@ import Network.URI
 data Mqtt = Mqtt {
   mqttClient :: MQTTClient,
   callbacks :: TVar [Callback],
-  awaitable :: Awaitable ()
+  disconnectedFuture :: Future ()
 }
-instance IsAwaitable () Mqtt where
-  toAwaitable = awaitable
+
+instance IsFuture () Mqtt where
+  toFuture = disconnectedFuture
 
 type CallbackFn = Mqtt -> Topic -> BSL.ByteString -> [Property] -> IO ()
 data Callback = Callback {
@@ -34,23 +33,23 @@ data Callback = Callback {
 }
 
 
-connectMqtt :: String -> Topic -> IO Mqtt
+connectMqtt :: String -> Topic -> QuasarIO Mqtt
 connectMqtt mqttUri statusTopic = mfix \handle -> do
   uri <- case parseURI mqttUri of
            Just uri -> pure uri
            Nothing -> fail "Invalid URI"
-  mqttClient <- connectURI (config handle statusTopic) uri
+  mqttClient <- liftIO $ connectURI (config handle statusTopic) uri
 
   callbacks <- newTVarIO []
 
-  publish mqttClient statusTopic "online" True
+  liftIO $ publish mqttClient statusTopic "online" True
 
-  awaitable <- toAwaitable <$> unmanagedAsync (waitForClient mqttClient)
+  disconnectedFuture <- toFuture <$> async (liftIO $ waitForClient mqttClient)
 
   pure Mqtt {
     mqttClient,
     callbacks,
-    awaitable
+    disconnectedFuture
   }
 
 config :: Mqtt -> Topic -> MQTTConfig
@@ -62,7 +61,7 @@ config handle statusTopic =
 
 dispatchCallback :: Mqtt -> MQTTClient -> Topic -> BSL.ByteString -> [Property] -> IO ()
 dispatchCallback handle@Mqtt{callbacks} _ topic content properties = do
-  cbs <- atomically $ readTVar callbacks
+  cbs <- readTVarIO callbacks
   mapM_ callMatch cbs
   where
     callMatch :: Callback -> IO ()

@@ -31,6 +31,7 @@ common shared-properties
     GeneralizedNewtypeDeriving
     ImportQualifiedPost
     InstanceSigs
+    KindSignatures
     LambdaCase
     MultiParamTypeClasses
     NamedFieldPuns
@@ -40,6 +41,7 @@ common shared-properties
     RankNTypes
     ScopedTypeVariables
     StandaloneDeriving
+    StandaloneKindSignatures
     TemplateHaskell
     TupleSections
     TypeApplications

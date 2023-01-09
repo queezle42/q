@@ -13,7 +13,7 @@ module Q.Hardware.G815 (
   run,
 ) where
 
-import Conduit
+import Conduit as C
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import Control.Monad.State.Lazy
@@ -21,17 +21,13 @@ import System.IO (stdout, hFlush)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Tuple (swap)
-import qualified Data.Text.IO as T
-import qualified Data.HashMap.Strict as HM
+import Data.Text.IO qualified as T
+import Data.HashMap.Strict qualified as HM
 import Language.Haskell.TH.Syntax (mkName, nameBase)
 import Lens.Micro.Platform
 import Q.System
-import Quasar.Async
-import Quasar.Network
-import Quasar.Observable
+import Quasar
 import Quasar.Prelude
-import Quasar.ResourceManager
-import System.Systemd.Daemon (getActivatedSockets)
 
 
 type Color = Text
@@ -48,20 +44,21 @@ data G815State = G815State {
 $(makeLensesWith (lensRules & lensField .~ (\_ _ -> pure . TopName . mkName . ("_" <>) . nameBase)) ''G815State)
 
 
-run :: IO ()
+run :: QuasarIO ()
 run = do
-  outboxMVar <- newMVar defaultState
-  g815 <- G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
+  outboxMVar <- liftIO $ newMVar defaultState
+  g815 <- liftIO $ G815 <$> newMVar defaultState <*> return (putMVar outboxMVar)
 
-  withRootResourceManager do
-    withSystemClient $ \client -> do
-      idleObservable <- liftIO $ idle client
+  withSystemClient $ \client -> do
+    idleObservable <- idle client
 
-      async_ $ observe (idleObservable) $ \msg -> do
-        value <- toObservableUpdate msg
-        liftIO $ updateG815 g815 $ assign _systemIsIdle (fromMaybe False value)
+    async_ $ observeBlocking idleObservable $ \msg -> do
+      let value = case msg of
+            ObservableValue r -> Just r
+            _ -> Nothing
+      liftIO $ updateG815 g815 $ assign _systemIsIdle (fromMaybe False value)
 
-      liftIO $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
+    liftIO $ runConduit $ source (takeMVar outboxMVar) .| filterDuplicates .| output
   where
     source :: IO G815State -> ConduitT () G815State IO ()
     source getStateUpdate = forever $ yield =<< liftIO getStateUpdate
@@ -93,14 +90,14 @@ defaultState = G815State {
 
 filterDuplicates :: forall a. Eq a => ConduitT a a IO ()
 filterDuplicates = do
-  first <- await
+  first <- C.await
   case first of
     Just first' -> yield first' >> filterDuplicates' first'
     Nothing -> return ()
   where
     filterDuplicates' :: a -> ConduitT a a IO ()
     filterDuplicates' previous = do
-      next <- await
+      next <- C.await
       case next of
         Just next' -> do
           when (previous /= next') $ yield next'

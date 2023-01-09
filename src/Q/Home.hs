@@ -2,7 +2,6 @@ module Q.Home (
   homeDaemon,
 ) where
 
-import Control.Concurrent.STM
 import Data.Text
 import Data.ByteString.Lazy qualified as BSL
 import Q.Mqtt
@@ -12,7 +11,6 @@ import Quasar.Prelude
 import Network.MQTT.Client
 
 
-homeDaemon :: String -> IO ()
 data LightLevel = Bright | Colorful | Mood | Off
   deriving (Eq, Show)
 
@@ -42,6 +40,7 @@ data RoomController = RoomController {
   currentGenerator :: TVar [IO ()]
 }
 
+homeDaemon :: String -> QuasarIO ()
 homeDaemon mqttUri = do
   traceIO $ "Connecting to " <> mqttUri
   mqtt <- connectMqtt mqttUri statusTopic
