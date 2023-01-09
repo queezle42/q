@@ -21,7 +21,7 @@ let
       "--extra-lib-dirs=${pkgs.zlib.static}/lib"
       "--extra-lib-dirs=${pkgs.libffi.overrideAttrs (old: { dontDisableStatic = true; })}/lib"
       "--extra-lib-dirs=${pkgs.ncurses.override { enableStatic = true; }}/lib"
-      "--disable-executable-stripping"
+      #"--disable-executable-stripping"
     ];
   });
 
