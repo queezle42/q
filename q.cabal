@@ -101,7 +101,6 @@ library
     Q.Hardware.BeatStep
     Q.Hardware.G815
     Q.Home
-    Q.Interface
     Q.Mqtt
     Q.Mqtt.Zigbee2Mqtt
     Q.Pinephone
