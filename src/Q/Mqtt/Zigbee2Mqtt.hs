@@ -3,6 +3,9 @@ module Q.Mqtt.Zigbee2Mqtt (
   ikeaDimmerCallbacks,
   subscribeIkeaDimmer,
 
+  MotionCallbacks(..),
+  subscribeMotion,
+
   setHueState,
   setHueWhite,
   setHueRainbow,
@@ -57,6 +60,30 @@ subscribeIkeaDimmer handle switchName callbacks = do
         Just (String action) -> traceIO $ "Unknown switch action: " <> show action
         Just action -> traceIO $ "Switch event action should be a string but is " <> show action
         Nothing -> pure () -- Switch event has no .action key, e.g. when availability is announced
+
+
+data MotionCallbacks = MotionCallbacks {
+  motionDetectedBright :: IO (),
+  motionDetectedDark :: IO (),
+  motionIdle :: IO ()
+}
+
+subscribeMotion :: Mqtt -> Text -> MotionCallbacks -> IO ()
+subscribeMotion mqtt name callbacks = subscribeJson mqtt (zigbee2mqtt name) cb
+  where
+    cb :: Mqtt -> Topic -> Object -> [Property] -> IO ()
+    cb _ _ event _ =
+      case HM.lookup "occupancy" event of
+        Just (Bool True) ->
+          case HM.lookup "illuminance_lux" event of
+            Just (Number lux) -> if lux > 10
+              then motionDetectedBright callbacks
+              else motionDetectedDark callbacks
+            _ -> traceIO $ "Missing 'illuminance_lux' from motion event"
+        Just (Bool False) -> motionIdle callbacks
+        Just action -> traceIO $ "'occupancy' should be a bool but is " <> show action
+        Nothing -> pure ()
+
 
 setHueState :: Mqtt -> Topic -> Bool -> IO ()
 setHueState mqtt hueTopic state = publishSetMessage mqtt hueTopic (stateMessage state)

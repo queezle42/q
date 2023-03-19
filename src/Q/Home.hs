@@ -57,6 +57,8 @@ homeDaemon mqttUri = do
   roomLivingRoom <- liftIO $ newRoomController (livingRoom mqtt)
   liftIO $ subscribeIkeaDimmer mqtt "switch_living_room" (dimmerHandlerForRoom roomLivingRoom)
 
+  liftIO $ subscribeMotion mqtt "kitchen_motion_1" (kitchenMotion mqtt)
+
   await mqtt
 
 statusTopic :: Topic
@@ -123,6 +125,13 @@ kitchenDimmer mqtt =
     off = setKitchenPreset mqtt Off,
     offLongPress = setKitchenPreset mqtt Mood
   }
+
+kitchenMotion :: Mqtt -> MotionCallbacks
+kitchenMotion mqtt = MotionCallbacks {
+  motionDetectedBright = pure (),
+  motionDetectedDark = stoveLight mqtt True,
+  motionIdle = setKitchenPreset mqtt Off
+}
 
 bedroomDimmer :: Mqtt -> IkeaDimmerCallbacks
 bedroomDimmer mqtt = fnDimmer (setBedroomPreset mqtt)
