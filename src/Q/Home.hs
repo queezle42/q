@@ -139,11 +139,11 @@ setKitchenPreset mqtt preset = do
   where
     hue Bright = setHueWhite mqtt kitchenHue
     hue Colorful = setHueRainbow mqtt kitchenHue
-    hue Mood = setHueDimOrange mqtt kitchenHue
+    hue Mood = setHueState mqtt kitchenHue False
     hue Off = setHueState mqtt kitchenHue False
     stoveLightState Bright = True
     stoveLightState Colorful = True
-    stoveLightState Mood = False
+    stoveLightState Mood = True
     stoveLightState Off = False
 
 setBedroomPreset :: Mqtt -> LightLevel -> IO ()
@@ -262,4 +262,4 @@ steve :: Mqtt -> BSL.ByteString -> IO ()
 steve mqtt@Mqtt{mqttClient} animation = qthingAnimation mqtt "kitchen" animation
 
 stoveLight :: Mqtt -> Bool -> IO ()
-stoveLight mqtt = setSwitchState mqtt "light_stove"
+stoveLight mqtt = setSwitchState mqtt "stove_light"
